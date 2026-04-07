@@ -1353,26 +1353,63 @@ function formatDist(metres) {
 
 // ===== OVERPASS API — fetch real dermatologists near coords =====
 async function fetchDermsNearby(lat, lng, radiusMetres) {
-  // Query for dermatology clinics, doctors, and hospitals near the point
+  // Simplified, faster Overpass query — nodes only, two targeted conditions.
+  // "way" results need a separate center calculation and routinely cause
+  // server-side timeouts when combined with node queries over large radii.
   const query = `
     [out:json][timeout:25];
     (
       node["healthcare"="doctor"]["healthcare:speciality"~"dermatology",i](around:${radiusMetres},${lat},${lng});
       node["amenity"="clinic"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
       node["amenity"="doctors"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
-      node["shop"="beauty"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
-      way["healthcare"="doctor"]["healthcare:speciality"~"dermatology",i](around:${radiusMetres},${lat},${lng});
-      way["amenity"="clinic"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
     );
-    out center;
+    out body;
   `;
-  const url = 'https://overpass-api.de/api/interpreter';
-  const res = await fetch(url, {
-    method: 'POST',
-    body: 'data=' + encodeURIComponent(query)
-  });
-  const data = await res.json();
-  return data.elements || [];
+ 
+  // AbortController gives us a client-side timeout (30 s) independent of
+  // the Overpass [timeout:25] directive, which only limits server processing.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+ 
+  let res;
+  try {
+    res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      // ← FIX: explicit Content-Type was missing in the original code.
+      //   Without it, Overpass returns a 400 Bad Request that the old
+      //   code's catch block reported as "check your internet connection."
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(query),
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('TIMEOUT'); // distinguished for the UI
+    }
+    throw new Error('NETWORK');   // real connectivity problem
+  }
+  clearTimeout(timeoutId);
+ 
+  if (!res.ok) {
+    // HTTP 400 / 429 / 5xx from Overpass
+    throw new Error(`SERVER_${res.status}`);
+  }
+ 
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    // Overpass sometimes returns a 200 with an HTML error page
+    throw new Error('PARSE');
+  }
+ 
+  // Overpass can embed an error inside a valid JSON envelope
+  if (data.elements === undefined) {
+    throw new Error('EMPTY_RESPONSE');
+  }
+ 
+  return data.elements;
 }
 
 // ===== GEOCODE city name → lat/lng via Nominatim =====
@@ -1465,80 +1502,104 @@ function expandRadius() {
 // ===== CORE: Load derms for given coords =====
 async function loadDermsForCoords(lat, lng, isUserLocation) {
   const radiusMetres = parseInt(document.getElementById('radiusSelect').value);
-  const radiusLabel = radiusMetres >= 1000 ? (radiusMetres/1000)+' km' : radiusMetres+' m';
-
+  const radiusLabel  = radiusMetres >= 1000
+    ? (radiusMetres / 1000) + ' km'
+    : radiusMetres + ' m';
+ 
   setStatus('🔍 Searching for dermatologists within ' + radiusLabel + '…');
   document.getElementById('dermGrid').innerHTML = '';
   document.getElementById('noDermsMsg').style.display = 'none';
   document.getElementById('noResultsRadius').textContent = radiusLabel;
-
+ 
+  // Remove old retry button if present
+  const bar = document.getElementById('mapStatusBar');
+  const oldBtn = bar && bar.querySelector('button');
+  if (oldBtn) oldBtn.remove();
+ 
   // Clear existing markers
   dermMarkers.forEach(m => dermMap.removeLayer(m));
   dermMarkers = [];
-
-  // Pan map to user location
+ 
+  // Pan map to target location
   dermMap.setView([lat, lng], 13);
-
-  // Add user location marker
+ 
+  // User / search-location marker
   const userIcon = L.divIcon({
     className: '',
-    html: `<div style="width:18px;height:18px;border-radius:50%;background:#c9856a;border:3px solid white;box-shadow:0 2px 10px rgba(201,133,106,.6)"></div>`,
+    html: `<div style="width:18px;height:18px;border-radius:50%;background:#c9856a;
+                border:3px solid white;box-shadow:0 2px 10px rgba(201,133,106,.6)"></div>`,
     iconSize: [18, 18], iconAnchor: [9, 9]
   });
   const userMarker = L.marker([lat, lng], { icon: userIcon })
     .addTo(dermMap)
-    .bindPopup('<div style="font-family:DM Sans,sans-serif;padding:8px;font-weight:600;color:#c9856a">📍 ' + (isUserLocation ? 'You are here' : 'Search location') + '</div>');
+    .bindPopup(
+      '<div style="font-family:DM Sans,sans-serif;padding:8px;font-weight:600;color:#c9856a">' +
+      '📍 ' + (isUserLocation ? 'You are here' : 'Search location') + '</div>'
+    );
   dermMarkers.push(userMarker);
-
-  // Draw radius circle
+ 
+  // Radius circle
   const circle = L.circle([lat, lng], {
     radius: radiusMetres,
     color: '#c9856a', fillColor: '#c9856a', fillOpacity: 0.06, weight: 1.5
   }).addTo(dermMap);
   dermMarkers.push(circle);
-
+ 
+  // ── Fetch and process data with proper error handling ──
   try {
     const elements = await fetchDermsNearby(lat, lng, radiusMetres);
-
-    // Build dermatologist objects, compute distance, sort by proximity
+ 
     const derms = elements
       .filter(el => el.lat || el.center)
       .map(el => {
         const elLat = el.lat || el.center.lat;
         const elLng = el.lon || el.center.lon;
-        const dist = haversineDistance(lat, lng, elLat, elLng);
-        const tags = el.tags || {};
+        const dist  = haversineDistance(lat, lng, elLat, elLng);
+        const tags  = el.tags || {};
         return {
-          name: tags.name || tags['name:en'] || 'Dermatology Clinic',
-          spec: tags['healthcare:speciality'] || tags.healthcare || 'Dermatologist',
-          address: [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ') || tags['addr:full'] || '',
-          phone: tags.phone || tags['contact:phone'] || '',
+          name:    tags.name || tags['name:en'] || 'Dermatology Clinic',
+          spec:    tags['healthcare:speciality'] || tags.healthcare || 'Dermatologist',
+          address: [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']]
+                     .filter(Boolean).join(', ') || tags['addr:full'] || '',
+          phone:   tags.phone   || tags['contact:phone']   || '',
           website: tags.website || tags['contact:website'] || '',
-          lat: elLat, lng: elLng,
-          dist
+          lat: elLat, lng: elLng, dist
         };
       })
-      .filter(d => d.dist <= radiusMetres)   // strict radius filter
+      .filter(d => d.dist <= radiusMetres)
       .sort((a, b) => a.dist - b.dist);
-
+ 
     if (derms.length === 0) {
-      setStatus('📍 Location found — no dermatologists on OpenStreetMap within ' + radiusLabel + '. Try a larger radius.');
+      setStatus(
+        '📍 Location found — no dermatologists on OpenStreetMap within ' +
+        radiusLabel + '. Try a larger radius.'
+      );
       document.getElementById('noDermsMsg').style.display = 'block';
       return;
     }
-
-    setStatus('✅ Found ' + derms.length + ' dermatologist' + (derms.length > 1 ? 's' : '') + ' within ' + radiusLabel + ' — sorted by distance.');
-
-    // Render derm cards
+ 
+    setStatus(
+      '✅ Found ' + derms.length + ' dermatologist' +
+      (derms.length > 1 ? 's' : '') +
+      ' within ' + radiusLabel + ' — sorted by distance.'
+    );
+ 
+    // Render cards
     renderDermCards(derms);
-
-    // Add markers
+ 
+    // Add map markers
     const dermIcon = L.divIcon({
       className: '',
-      html: `<div style="width:36px;height:36px;border-radius:50% 50% 50% 0;background:linear-gradient(135deg,#c9856a,#a8604a);border:3px solid white;box-shadow:0 4px 14px rgba(168,96,74,.45);display:flex;align-items:center;justify-content:center;font-size:16px;transform:rotate(-45deg);cursor:pointer"><span style="transform:rotate(45deg)">🩺</span></div>`,
+      html: `<div style="width:36px;height:36px;border-radius:50% 50% 50% 0;
+                  background:linear-gradient(135deg,#c9856a,#a8604a);
+                  border:3px solid white;box-shadow:0 4px 14px rgba(168,96,74,.45);
+                  display:flex;align-items:center;justify-content:center;
+                  font-size:16px;transform:rotate(-45deg);cursor:pointer">
+                 <span style="transform:rotate(45deg)">🩺</span>
+               </div>`,
       iconSize: [36, 36], iconAnchor: [18, 36], popupAnchor: [0, -38]
     });
-
+ 
     derms.forEach(d => {
       const marker = L.marker([d.lat, d.lng], { icon: dermIcon }).addTo(dermMap);
       marker.bindPopup(`
@@ -1546,17 +1607,17 @@ async function loadDermsForCoords(lat, lng, isUserLocation) {
           <h5>🩺 ${d.name}</h5>
           <div class="popup-spec">${d.spec}</div>
           ${d.address ? `<div class="popup-loc">📍 ${d.address}</div>` : ''}
-          ${d.phone ? `<div class="popup-phone"><a href="tel:${d.phone}">📞 ${d.phone}</a></div>` : ''}
+          ${d.phone   ? `<div class="popup-phone"><a href="tel:${d.phone}">📞 ${d.phone}</a></div>` : ''}
           <div class="popup-dist">📏 ${formatDist(d.dist)} away</div>
         </div>`);
       dermMarkers.push(marker);
     });
-
+ 
     // Fit map to show all markers
     const allPoints = [[lat, lng], ...derms.map(d => [d.lat, d.lng])];
     dermMap.fitBounds(L.latLngBounds(allPoints).pad(0.15));
-
-  } catch(err) {
+ 
+  } catch (err) {
     console.error('Overpass error:', err);
     setStatus('❌ Could not fetch data. Check your internet connection and try again.');
   }
