@@ -6,6 +6,9 @@
 <title>Glow & Go – Glow Naturally, Go Confidently</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<!-- Leaflet Map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Firebase -->
 <script type="module">
@@ -14,9 +17,6 @@
            sendPasswordResetEmail, signOut, onAuthStateChanged,
            GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-  // *** REPLACE with your own Firebase config ***
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyAERQ_mPeh7TFLox5ksBEXQrwVeSOp70hc",
   authDomain: "glowandgo-8c491.firebaseapp.com",
@@ -82,8 +82,6 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
 }
-
-/* ===== SCROLLBAR ===== */
 ::-webkit-scrollbar { width: 7px; }
 ::-webkit-scrollbar-track { background: var(--blush); }
 ::-webkit-scrollbar-thumb { background: var(--rose); border-radius: 10px; }
@@ -347,7 +345,6 @@ nav {
   transition: all .25s; font-family: var(--ff-body);
 }
 .buy-btn:hover { background: var(--clay); transform: translateY(-1px); }
-/* Product filter tabs */
 .product-filters { display: flex; gap: 10px; margin-bottom: 36px; flex-wrap: wrap; }
 .filter-btn {
   padding: 9px 22px; border-radius: 30px;
@@ -480,6 +477,46 @@ nav {
 .blog-body p { font-size: .85rem; color: var(--text-light); line-height: 1.7; }
 .read-more { color: var(--terracotta); font-weight: 600; font-size: .85rem; margin-top: 12px; display: inline-block; }
 
+/* ===== BLOG DETAIL PAGE ===== */
+.blog-detail-page { padding: 60px 5vw; max-width: 820px; margin: 0 auto; }
+.blog-detail-hero-img {
+  width: 100%; height: 280px; border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8rem; margin-bottom: 36px; box-shadow: var(--shadow);
+}
+.blog-detail-meta { display: flex; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.blog-detail-meta span {
+  font-size: .78rem; color: var(--text-light);
+  background: var(--blush); padding: 4px 12px; border-radius: 30px;
+}
+.blog-detail-title {
+  font-family: var(--ff-display); font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 300; line-height: 1.2; margin-bottom: 28px; color: var(--text);
+}
+.blog-detail-title em { color: var(--terracotta); font-style: italic; }
+.blog-detail-body {
+  font-size: 1rem; color: var(--text-light); line-height: 1.85;
+}
+.blog-detail-body p { margin-bottom: 20px; }
+.blog-detail-body h4 {
+  font-family: var(--ff-display); font-size: 1.5rem; font-weight: 500;
+  color: var(--text); margin: 32px 0 14px;
+}
+.blog-detail-body ul { margin: 0 0 20px 20px; }
+.blog-detail-body ul li { padding: 5px 0; }
+.blog-detail-body blockquote {
+  border-left: 3px solid var(--terracotta); padding: 14px 20px;
+  background: var(--blush); border-radius: 0 12px 12px 0;
+  font-family: var(--ff-display); font-size: 1.2rem; font-style: italic;
+  color: var(--clay); margin: 24px 0;
+}
+.blog-tag-pill {
+  display: inline-block; padding: 5px 14px; border-radius: 30px;
+  background: rgba(201,133,106,0.12); color: var(--terracotta);
+  font-size: .75rem; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; margin-bottom: 14px;
+}
+
 /* ===== VIDEOS ===== */
 .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 28px; }
 .video-card {
@@ -514,13 +551,91 @@ nav {
 }
 .derm-card a { color: var(--terracotta); text-decoration: none; }
 .derm-card a:hover { text-decoration: underline; }
-.map-placeholder {
-  width: 100%; height: 320px; border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--blush), var(--rose));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.1rem; color: var(--text-light); margin-bottom: 36px;
-  font-family: var(--ff-display); font-style: italic; box-shadow: var(--shadow);
+.derm-distance-badge {
+  display: inline-block; background: rgba(122,158,118,0.15); color: var(--sage-dark);
+  border-radius: 20px; padding: 3px 10px; font-size: .72rem; font-weight: 600;
+  margin-bottom: 10px;
 }
+
+/* ===== MAP ===== */
+#dermMap {
+  width: 100%; height: 420px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 36px;
+  border: 2px solid rgba(201,133,106,0.18);
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+.map-status-bar {
+  background: var(--blush); border-radius: 12px;
+  padding: 12px 20px; margin-bottom: 20px;
+  font-size: .85rem; color: var(--text-light);
+  display: flex; align-items: center; gap: 10px;
+}
+.map-status-bar .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--sage-dark); flex-shrink: 0;
+  animation: pulse 2s infinite;
+}
+/* Radius controls */
+.radius-controls {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.radius-controls label { font-size: .85rem; color: var(--text-light); font-weight: 500; }
+.radius-select {
+  padding: 8px 16px; border-radius: 30px; border: 1.5px solid var(--rose);
+  font-family: var(--ff-body); font-size: .85rem; color: var(--text);
+  background: var(--card-bg); cursor: pointer; outline: none;
+}
+.radius-select:focus { border-color: var(--terracotta); }
+/* City search */
+.derm-search-bar {
+  display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.derm-search-bar input {
+  padding: 10px 18px; border-radius: 30px; border: 1.5px solid var(--rose);
+  font-family: var(--ff-body); font-size: .88rem; background: var(--card-bg);
+  color: var(--text); outline: none; min-width: 220px; transition: border .25s;
+}
+.derm-search-bar input:focus { border-color: var(--terracotta); }
+/* No-results message */
+.no-derms-msg {
+  text-align: center; padding: 48px 20px;
+  background: var(--card-bg); border-radius: var(--radius);
+  box-shadow: var(--shadow); margin-bottom: 24px; display: none;
+}
+.no-derms-msg .no-icon { font-size: 3rem; margin-bottom: 14px; }
+.no-derms-msg h4 { font-family: var(--ff-display); font-size: 1.5rem; font-weight: 400; color: var(--text); margin-bottom: 8px; }
+.no-derms-msg p { font-size: .9rem; color: var(--text-light); max-width: 400px; margin: 0 auto 18px; line-height: 1.65; }
+@keyframes pulse {
+  0%,100% { opacity: 1; } 50% { opacity: 0.4; }
+}
+/* Custom Leaflet popup styling */
+.leaflet-popup-content-wrapper {
+  border-radius: 14px !important;
+  box-shadow: 0 8px 30px rgba(168,96,74,0.2) !important;
+  border: 1px solid rgba(201,133,106,0.2) !important;
+  font-family: 'DM Sans', sans-serif !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+  width: auto !important;
+}
+.map-popup {
+  padding: 16px 18px; min-width: 200px;
+}
+.map-popup h5 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.1rem; font-weight: 600; color: #3a2e2a; margin-bottom: 4px;
+}
+.map-popup .popup-spec { font-size: .75rem; color: #c9856a; font-weight: 500; margin-bottom: 8px; }
+.map-popup .popup-loc { font-size: .78rem; color: #8a7060; margin-bottom: 4px; }
+.map-popup .popup-phone a { color: #c9856a; font-size: .78rem; text-decoration: none; font-weight: 500; }
+.map-popup .popup-dist { font-size: .72rem; color: #7a9e76; font-weight: 600; margin-top: 6px; }
 
 /* ===== AUTH PAGES ===== */
 .auth-page {
@@ -616,9 +731,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
 }
 
 /* ===== MISC ===== */
-.back-bar {
-  padding: 20px 5vw 0;
-}
+.back-bar { padding: 20px 5vw 0; }
 .back-bar button {
   background: none; border: none; color: var(--text-light);
   font-family: var(--ff-body); font-size: .9rem; cursor: pointer;
@@ -660,7 +773,6 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
 
 <!-- ===================== HOME PAGE ===================== -->
 <div class="page active" id="page-home">
-  <!-- Hero -->
   <section class="hero">
     <div class="hero-content">
       <div class="hero-badge">🌿 Natural Skincare Platform</div>
@@ -690,7 +802,6 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
     </div>
   </section>
 
-  <!-- Stats -->
   <div class="stats">
     <div class="stat reveal"><h3>50K+</h3><p>Happy Users</p></div>
     <div class="stat reveal"><h3>200+</h3><p>Curated Products</p></div>
@@ -698,7 +809,6 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
     <div class="stat reveal"><h3>15+</h3><p>Expert Articles</p></div>
   </div>
 
-  <!-- Skin Types Preview -->
   <section class="section" id="skinSection">
     <div class="section-header reveal">
       <div class="eyebrow">Know Your Skin</div>
@@ -736,7 +846,6 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
     </div>
   </section>
 
-  <!-- Feature Highlights -->
   <section class="section" style="background: linear-gradient(135deg, var(--blush), var(--cream)); padding: 64px 5vw;">
     <div class="section-header reveal">
       <div class="eyebrow">Everything You Need</div>
@@ -916,6 +1025,14 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
   </section>
 </div>
 
+<!-- ===================== BLOG DETAIL PAGE ===================== -->
+<div class="page" id="page-blogdetail">
+  <div class="back-bar">
+    <button onclick="showPage('blog')"><i class="fas fa-arrow-left"></i> Back to Blog</button>
+  </div>
+  <div class="blog-detail-page" id="blogDetailContent"></div>
+</div>
+
 <!-- ===================== VIDEOS PAGE ===================== -->
 <div class="page" id="page-videos">
   <section class="section">
@@ -934,9 +1051,51 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
     <div class="section-header">
       <div class="eyebrow">Professional Care</div>
       <h2>Find a <em>Dermatologist</em></h2>
-      <p>Connect with certified dermatologists near you for professional skin consultations and treatments.</p>
+      <p>Dermatologists near your location, sourced in real time from OpenStreetMap.</p>
     </div>
-    <div class="map-placeholder">📍 Map View — Enable location for nearby results</div>
+
+    <!-- City search bar -->
+    <div class="derm-search-bar">
+      <input type="text" id="dermCityInput" placeholder="Search a city (e.g. Nagpur, Pune…)"
+             onkeydown="if(event.key==='Enter') searchDermCity()" />
+      <button class="btn-primary" onclick="searchDermCity()">
+        <i class="fas fa-search"></i> Search
+      </button>
+      <button class="btn-outline" onclick="useDermGeoLocation()" title="Use my location">
+        <i class="fas fa-location-arrow"></i> Use My Location
+      </button>
+    </div>
+
+    <!-- Radius selector -->
+    <div class="radius-controls">
+      <label for="radiusSelect">Search radius:</label>
+      <select class="radius-select" id="radiusSelect" onchange="onRadiusChange()">
+        <option value="5000">5 km</option>
+        <option value="10000" selected>10 km</option>
+        <option value="20000">20 km</option>
+        <option value="50000">50 km</option>
+        <option value="100000">100 km</option>
+      </select>
+    </div>
+
+    <!-- Map status bar -->
+    <div class="map-status-bar" id="mapStatusBar">
+      <div class="dot"></div>
+      <span id="mapStatusText">Requesting your location…</span>
+    </div>
+
+    <!-- Leaflet Map -->
+    <div id="dermMap"></div>
+
+    <!-- No results message -->
+    <div class="no-derms-msg" id="noDermsMsg">
+      <div class="no-icon">🔍</div>
+      <h4>No dermatologists found nearby</h4>
+      <p>We couldn't find any dermatologists within <span id="noResultsRadius">10 km</span> of your location. Try expanding the search radius or searching a different city.</p>
+      <button class="btn-primary" onclick="expandRadius()">Expand Radius</button>
+    </div>
+
+    <!-- Derm Cards -->
     <div class="derm-grid" id="dermGrid"></div>
   </section>
 </div>
@@ -986,7 +1145,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
       <button class="auth-btn" onclick="handleSignUp()">Create Account</button>
       <div class="auth-divider"><hr/><span>or</span><hr/></div>
       <button class="google-btn" onclick="handleGoogleSignIn()">
-        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
         Continue with Google
       </button>
       <div class="auth-switch">Already have an account? <a onclick="showPage('signin')">Sign In</a></div>
@@ -1055,11 +1214,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
 // ===== DATA =====
 const skinData = {
   oily: {
-    name: 'Oily Skin',
-    icon: '💧',
-    tag: 'Oily Skin',
-    tagClass: 'tag-oily',
-    iconClass: 'oily',
+    name: 'Oily Skin', icon: '💧', tag: 'Oily Skin', tagClass: 'tag-oily', iconClass: 'oily',
     desc: 'Oily skin is characterized by an overproduction of sebum (natural skin oil) by the sebaceous glands. The skin appears shiny and greasy, especially in the T-zone (forehead, nose, and chin). Pores are often enlarged and more visible. While oily skin is prone to blackheads, whiteheads, and acne, the good news is that it tends to age more slowly and show fewer wrinkles due to the extra moisture from natural oils.',
     causes: ['Genetics and hormonal fluctuations', 'Puberty, menstruation, pregnancy, and menopause', 'High humidity and hot weather', 'Using harsh products that strip natural oils, causing rebound oiliness', 'Diet high in processed foods, dairy, or refined carbohydrates', 'Stress increasing cortisol levels', 'Over-washing the face'],
     routine: [
@@ -1073,11 +1228,7 @@ const skinData = {
     tips: ['Blot excess oil with blotting papers throughout the day', 'Avoid touching your face to prevent bacteria transfer', 'Change pillowcases frequently', 'Choose water-based, non-comedogenic makeup', 'Do not skip moisturizer — dehydration triggers more oil production', 'Use lukewarm water to cleanse, not hot']
   },
   dry: {
-    name: 'Dry Skin',
-    icon: '🌸',
-    tag: 'Dry Skin',
-    tagClass: 'tag-dry',
-    iconClass: 'dry',
+    name: 'Dry Skin', icon: '🌸', tag: 'Dry Skin', tagClass: 'tag-dry', iconClass: 'dry',
     desc: 'Dry skin lacks sufficient moisture and natural oils, leaving it feeling tight, rough, and sometimes flaky. The skin barrier is compromised, making it more sensitive to environmental irritants. Fine lines and wrinkles may appear more pronounced. Dry skin can be uncomfortable, especially after cleansing, and may feel itchy or look dull. With the right hydrating routine, dry skin can become soft, plump, and radiant.',
     causes: ['Genetics and hereditary factors', 'Aging and hormonal changes (especially post-menopause)', 'Cold, dry weather or low humidity environments', 'Hot baths and showers that strip natural oils', 'Harsh soaps and detergents', 'Certain medical conditions like hypothyroidism or eczema', 'Dehydration and poor water intake', 'Nutritional deficiencies (vitamins A, C, E, and essential fatty acids)'],
     routine: [
@@ -1091,11 +1242,7 @@ const skinData = {
     tips: ['Apply moisturizer immediately after washing while skin is still slightly damp', 'Use a humidifier indoors especially in winter', 'Drink at least 8 glasses of water daily', 'Avoid long, hot showers — keep it lukewarm and under 10 minutes', 'Choose fragrance-free products to avoid irritation', 'Eat foods rich in omega-3 fatty acids (salmon, walnuts, flaxseed)', 'Avoid alcohol-based toners and astringents']
   },
   combo: {
-    name: 'Combination Skin',
-    icon: '✨',
-    tag: 'Combination',
-    tagClass: 'tag-combo',
-    iconClass: 'combo',
+    name: 'Combination Skin', icon: '✨', tag: 'Combination', tagClass: 'tag-combo', iconClass: 'combo',
     desc: 'Combination skin features an oily T-zone (forehead, nose, and chin) alongside dry or normal cheeks. This is the most common skin type worldwide. The oily areas may have enlarged pores, shine, and be prone to breakouts, while the cheeks may feel dry, tight, or sensitive. Managing combination skin requires a balanced approach — addressing both oiliness and dryness without exacerbating either zone.',
     causes: ['Genetics playing a primary role', 'Hormonal fluctuations throughout the month', 'Using products formulated for a single skin type', 'Seasonal changes affecting different facial zones differently', 'Overwashing the face causing rebound oiliness in the T-zone', 'Using heavy creams that congest the T-zone while neglecting cheeks'],
     routine: [
@@ -1112,26 +1259,27 @@ const skinData = {
 
 const products = [
   { id:1, name:'CeraVe Foaming Cleanser', type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/CeraVe%20Foaming%20Cleanser.jpg?raw=true', price:'₹1116', desc:'Gentle foaming gel that removes oil without disrupting the skin barrier.', benefits:['Removes excess oil','Contains niacinamide','Non-comedogenic','Fragrance-free'], badge:'Best Seller', link:'https://www.myntra.com/face-wash-and-cleanser/cerave/cerave-foaming-cleanser-for-oily-skin-with-hyaluronic-acid--niacinamide---236ml/32464728/buy' },
-  { id:2, name:'Paula\'s Choice BHA Exfoliant', type:'oily', icon: 'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Paula.jpg?raw=true', price:'₹1,200', desc:'2% salicylic acid liquid exfoliant to unclog pores and smooth skin texture.', benefits:['Unclogs pores','Reduces blackheads','Improves skin texture','Anti-inflammatory'], badge:'Top Rated', link:'https://www.paulaschoice.in/products/skin-perfecting-2-bha-liquid-exfoliant?variant=44403503202585&gad_source=1&gad_campaignid=23295560618&gbraid=0AAAAAppQVSKaUpIuqYT0BX5zldgzEuAHE&gclid=Cj0KCQjws83OBhD4ARIsACblj18ujBH6RQHv9cGPAsov_KR7beNB1QWYmlhAd4GSpCqSWlwxBB4xiOoaAmQkEALw_wcB' },
-  { id:3, name:'Neutrogena Oil-Free Moisturizer', type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Neutrogena%20Ultra%20Gentle%20Daily%20Face%20Moisturizer%20With%20Glycerin,%20Niacinamide%20&%20Vitamin%20B5.jpg?raw=true', price:'₹750', desc:'Lightweight, oil-free moisturizer that hydrates without any greasy residue.', benefits:['Oil-free formula','Non-comedogenic','Lightweight feel','SPF protection'], badge:'', link:'https://www.nykaa.com/neutrogena-ultra-gentle-daily-face-moisturizer-with-glycerin-niacinamide-vitamin-b5/p/18355488?ptype=product&skuId=18355488&srsltid=AfmBOopMv371QT1lR0D8QJBXkj62h-gPZu0KWH43m8ni_ojFGKO-6NK3PYU' },
-  { id:4, name:'La Roche-Posay Effaclar', type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/La%20Roche-Posay%20Effaclar%20Duo+M%20Gel%20with%20Salicylic%20acid,%20Anti-Acne%20Moisturiser%20for%20Acne-Prone%20Skin.jpg?raw=true', price:'₹1,250', desc:'Mattifying gel moisturizer with LHA and zinc PCA for oily and acne-prone skin.', benefits:['Mattifying effect','Controls shine','Tightens pores','With zinc PCA'], badge:'New', link:'https://www.nykaaman.com/la-roche-posay-effaclar-duo-m-gel-anti-breakout-moisturiser/p/23570695?ptype=product&skuId=23326359&utm_content=ads&utm_source=GooglePaid&utm_medium=SSC&utm_campaign=SSC_Grooming_CatchAll_120625&gad_source=1&gad_campaignid=22672637005&gbraid=0AAAAAC969uvNqxJUvnceD9EXhaxLTOcVj&gclid=Cj0KCQjws83OBhD4ARIsACblj1-WPCpDhJnB3nAzRoXz3RggJu4sCBjKuAs5_Fc6JSZ9oJ64Y6q9yeEaAt4GEALw_wcB' },
-  { id:5, name:'CeraVe Moisturizing Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/CeraVe%20Moisturizer%20Cream%20For%20Dry%20Skin%20With%20Ceramides%20&%20Hyaluronic%20Acid%20For%20Barrier%20Repair.jpg?raw=true', price:'₹387', desc:'Rich 24-hour moisturizer with ceramides and hyaluronic acid for very dry skin.', benefits:['Rich ceramide formula','24-hour hydration','Restores skin barrier','Fragrance-free'], badge:'Best Seller', link:'https://www.nykaaman.com/cerave-moisturizing-cream-for-dry-to-very-dry-skin-with-ceramides-hyaluronic-acid/p/13169472?ptype=product&skuId=13169457&utm_content=ads&utm_source=GooglePaid&utm_medium=SSC&utm_campaign=SSC_Grooming_Skin_CatchAll_ExcMetro_260326&gad_source=1&gad_campaignid=23688935925&gbraid=0AAAAAC969uu9s3Dr7pgh9HFrhaqq7ly7W&gclid=Cj0KCQjws83OBhD4ARIsACblj18-9euvHyb89Ji5zM6U6mp5EUQEWxHikx0azErE-NCqu4ljIkmt67saAq_4EALw_wcB' },
-  { id:6, name:'The Ordinary HA 2% + B5', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/The%20Ordinary%20Hyaluronic%20Acid%202%25%20+%20B5.jpg?raw=true', price:'₹999', desc:'High-purity hyaluronic acid serum with vitamin B5 for intense surface hydration.', benefits:['Multi-weight HA','Plumps skin','Reduces fine lines','Suitable for all types'], badge:'Top Rated', link:'https://www.nykaaman.com/the-ordinary-hyaluronic-acid-2percent-b5/p/13806304?ptype=product&skuId=13806302&utm_content=ads&utm_source=GooglePaid&utm_medium=SSC&utm_campaign=SSC_Grooming_Skin_CatchAll_ExcMetro_260326&gad_source=1&gad_campaignid=23688935925&gbraid=0AAAAAC969uu9s3Dr7pgh9HFrhaqq7ly7W&gclid=Cj0KCQjws83OBhD4ARIsACblj19iPtJCFLXglb_H5V1pp3MBLVwUeky6uQyojUEz1mFtUqSxXIXAJD8aAhDtEALw_wcB' },
-  { id:7, name:'Kiehl\'s Ultra Facial Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/kiehl.jpg?raw=true', price:'₹3000', desc:'Intensely hydrating 24-hour facial cream with glacial glycoprotein and cross-linked hyaluronic acid.', benefits:['24-hour hydration','Strengthens barrier','Comfortable feel','Dermatologist tested'], badge:'', link:'https://www.nykaaman.com/kiehl-s-ultra-facial-cream/p/435017?ptype=product&skuId=26597&utm_content=ads&utm_source=GooglePaid&utm_medium=SSC&utm_campaign=SSC_Grooming_Skin_CatchAll_ExcMetro_260326&gad_source=1&gad_campaignid=23688935925&gbraid=0AAAAAC969uu9s3Dr7pgh9HFrhaqq7ly7W&gclid=Cj0KCQjws83OBhD4ARIsACblj1_wAhE8sq_hUqi6N3MspvKxq65na2MePiPJUNbhaWQS4ZW0ZFNg2okaAgxvEALw_wcB' },
-  { id:8, name:'Drunk Elephant Lala Whipped Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Drunk%20Elephant%20Lala%20Retro%20Whipped%20Cream%20Moisturizer%20with%20Ceramides.jpg?raw=true', price:'₹9,999', desc:'Airy yet hydrating facial moisturizer packed with ceramides and fatty acids.', benefits:['Ceramide-rich','Squalane & fatty acids','Lightweight texture','Barrier repair'], badge:'Luxe', link:'https://www.kicksmachine.com/products/drunk-elephant-lala-retro-whipped-cream-moisturizer-with-ceramides-pimprod2028065?variant=47603971621086&country=IN&currency=INR&utm_medium=product_sync&utm_source=google&utm_content=sag_organic&utm_campaign=sag_organic&gad_source=1&gad_campaignid=23019678956&gbraid=0AAAABAB7QnFLC48X-zwqnSJ1vYV8uyaFb&gclid=Cj0KCQjws83OBhD4ARIsACblj1_0eM6IJ1hYaFz6-zmYZ51C2qjp9NzkiDCC80wdd3Udh-OW7eCXuIIaAvbNEALw_wcB' },
-  { id:9, name:'Clinique Moisture Surge 72H', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Clinique%20Moisture%20Surge%20Intense%2072h%20Lipid-replenishing%20Hydrator.jpg?raw=true', price:'₹950', desc:'Lightweight, oil-free gel-cream that delivers 72-hour hydration for combination skin.', benefits:['72-hour hydration','Oil-free gel formula','Balances skin','Non-comedogenic'], badge:'Best Seller', link:'https://www.nykaaman.com/clinique-moisture-surge-intense-72h-lipid-replenishing-hydrator/p/1029973?ptype=product&skuId=6763814&utm_content=ads&utm_source=GooglePaid&utm_medium=SSC&utm_campaign=SSC_Grooming_Skin_CatchAll_ExcMetro_260326&gad_source=1&gad_campaignid=23688935925&gbraid=0AAAAAC969uu9s3Dr7pgh9HFrhaqq7ly7W&gclid=Cj0KCQjws83OBhD4ARIsACblj19XH_QMlX1mhL9yNwjZcU41cLH7AQLKZJb-cw_ENXjB86d2GUs6UPYaAu8OEALw_wcB' },
-  { id:10, name:'Niacinamide 10% + Zinc 1%', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/The%20Ordinary%20Niacinamide%2010%25%20+%20Zinc%201%25.jpg?raw=true', price:'₹1100', desc:'High-strength vitamin B3 serum that balances sebum while improving texture for combination skin.', benefits:['Reduces pore size','Balances sebum','Brightens skin tone','Anti-inflammatory'], badge:'Top Rated', link:'https://www.nykaaman.com/the-ordinary-niacinamide-10percent-zinc-1percent/p/15707745?ptype=product&skuId=14257002&utm_content=ads&utm_source=GooglePaid&utm_medium=SSC&utm_campaign=SSC_Grooming_Skin_CatchAll_ExcMetro_260326&gad_source=1&gad_campaignid=23688935925&gbraid=0AAAAAC969uu9s3Dr7pgh9HFrhaqq7ly7W&gclid=Cj0KCQjws83OBhD4ARIsACblj1959yj9mNW92JVHhg0lRFq14A3P5caChUF062AXZfoQ-ifchfXgTfsaAiEoEALw_wcB' },
-  { id:11, name:'Origins Clear Improvement Mask', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/ORIGINS%20Clear%20Improvement%20Active%20Charcoal%20Mask%2075m.jpg?raw=true', price:'₹1,439', desc:'Active charcoal mask to clear pores in the T-zone while soothing drier areas.', benefits:['Deep pore cleansing','Absorbs impurities','With white china clay','Can multi-mask'], badge:'', link:'https://www.lmching.com/products/origins-clear-improvement-active-charcoal-mask-75ml?currency=INR&country=IN&variant=42098681544787&utm_source=google&utm_medium=cpc&utm_campaign=Google%20Shopping&stkn=b0e27958da51&srsltid=AfmBOoqmYgBgIlcaEqTzTAOyLY_TsQFZVpwXSBMSctNV0rCOjTfXRzorrM0' },
-  { id:12, name:'First Aid Beauty Face Cleanser', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/First%20Aid%20Beauty%20Pure%20Skin%20Face%20Cleanser.jpg?raw=trueS', price:'₹1,350', desc:'Ultra gentle face cleanser that works for combination skin without over-drying any zone.', benefits:['PH balanced','Free of harsh sulfates','Anti-irritant complex','For sensitive combo skin'], badge:'', link:'https://www.nykaa.com/first-aid-beauty-pure-skin-face-cleanser/p/12939370?ptype=product&skuId=12939354&srsltid=AfmBOop8JqVktyL25u-ybkj50dr6VUZeirWDOwQ3wKLW46ot4kbfViLRHSU' }
+  { id:2, name:"Paula's Choice BHA Exfoliant", type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Paula.jpg?raw=true', price:'₹1,200', desc:'2% salicylic acid liquid exfoliant to unclog pores and smooth skin texture.', benefits:['Unclogs pores','Reduces blackheads','Improves skin texture','Anti-inflammatory'], badge:'Top Rated', link:'https://www.paulaschoice.in/products/skin-perfecting-2-bha-liquid-exfoliant' },
+  { id:3, name:'Neutrogena Oil-Free Moisturizer', type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Neutrogena%20Ultra%20Gentle%20Daily%20Face%20Moisturizer%20With%20Glycerin,%20Niacinamide%20&%20Vitamin%20B5.jpg?raw=true', price:'₹750', desc:'Lightweight, oil-free moisturizer that hydrates without any greasy residue.', benefits:['Oil-free formula','Non-comedogenic','Lightweight feel','SPF protection'], badge:'', link:'https://www.nykaa.com/neutrogena-ultra-gentle-daily-face-moisturizer-with-glycerin-niacinamide-vitamin-b5/p/18355488' },
+  { id:4, name:'La Roche-Posay Effaclar', type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/La%20Roche-Posay%20Effaclar%20Duo+M%20Gel%20with%20Salicylic%20acid,%20Anti-Acne%20Moisturiser%20for%20Acne-Prone%20Skin.jpg?raw=true', price:'₹1,250', desc:'Mattifying gel moisturizer with LHA and zinc PCA for oily and acne-prone skin.', benefits:['Mattifying effect','Controls shine','Tightens pores','With zinc PCA'], badge:'New', link:'https://www.nykaaman.com/la-roche-posay-effaclar-duo-m-gel-anti-breakout-moisturiser/p/23570695' },
+  { id:5, name:'CeraVe Moisturizing Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/CeraVe%20Moisturizer%20Cream%20For%20Dry%20Skin%20With%20Ceramides%20&%20Hyaluronic%20Acid%20For%20Barrier%20Repair.jpg?raw=true', price:'₹387', desc:'Rich 24-hour moisturizer with ceramides and hyaluronic acid for very dry skin.', benefits:['Rich ceramide formula','24-hour hydration','Restores skin barrier','Fragrance-free'], badge:'Best Seller', link:'https://www.nykaaman.com/cerave-moisturizing-cream-for-dry-to-very-dry-skin-with-ceramides-hyaluronic-acid/p/13169472' },
+  { id:6, name:'The Ordinary HA 2% + B5', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/The%20Ordinary%20Hyaluronic%20Acid%202%25%20+%20B5.jpg?raw=true', price:'₹999', desc:'High-purity hyaluronic acid serum with vitamin B5 for intense surface hydration.', benefits:['Multi-weight HA','Plumps skin','Reduces fine lines','Suitable for all types'], badge:'Top Rated', link:'https://www.nykaaman.com/the-ordinary-hyaluronic-acid-2percent-b5/p/13806304' },
+  { id:7, name:"Kiehl's Ultra Facial Cream", type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/kiehl.jpg?raw=true', price:'₹3000', desc:'Intensely hydrating 24-hour facial cream with glacial glycoprotein and cross-linked hyaluronic acid.', benefits:['24-hour hydration','Strengthens barrier','Comfortable feel','Dermatologist tested'], badge:'', link:'https://www.nykaaman.com/kiehl-s-ultra-facial-cream/p/435017' },
+  { id:8, name:'Drunk Elephant Lala Whipped Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Drunk%20Elephant%20Lala%20Retro%20Whipped%20Cream%20Moisturizer%20with%20Ceramides.jpg?raw=true', price:'₹9,999', desc:'Airy yet hydrating facial moisturizer packed with ceramides and fatty acids.', benefits:['Ceramide-rich','Squalane & fatty acids','Lightweight texture','Barrier repair'], badge:'Luxe', link:'https://www.kicksmachine.com/products/drunk-elephant-lala-retro-whipped-cream-moisturizer-with-ceramides' },
+  { id:9, name:'Clinique Moisture Surge 72H', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Clinique%20Moisture%20Surge%20Intense%2072h%20Lipid-replenishing%20Hydrator.jpg?raw=true', price:'₹950', desc:'Lightweight, oil-free gel-cream that delivers 72-hour hydration for combination skin.', benefits:['72-hour hydration','Oil-free gel formula','Balances skin','Non-comedogenic'], badge:'Best Seller', link:'https://www.nykaaman.com/clinique-moisture-surge-intense-72h-lipid-replenishing-hydrator/p/1029973' },
+  { id:10, name:'Niacinamide 10% + Zinc 1%', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/The%20Ordinary%20Niacinamide%2010%25%20+%20Zinc%201%25.jpg?raw=true', price:'₹1100', desc:'High-strength vitamin B3 serum that balances sebum while improving texture for combination skin.', benefits:['Reduces pore size','Balances sebum','Brightens skin tone','Anti-inflammatory'], badge:'Top Rated', link:'https://www.nykaaman.com/the-ordinary-niacinamide-10percent-zinc-1percent/p/15707745' },
+  { id:11, name:'Origins Clear Improvement Mask', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/ORIGINS%20Clear%20Improvement%20Active%20Charcoal%20Mask%2075m.jpg?raw=true', price:'₹1,439', desc:'Active charcoal mask to clear pores in the T-zone while soothing drier areas.', benefits:['Deep pore cleansing','Absorbs impurities','With white china clay','Can multi-mask'], badge:'', link:'https://www.lmching.com/products/origins-clear-improvement-active-charcoal-mask-75ml' },
+  { id:12, name:'First Aid Beauty Face Cleanser', type:'combo', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/First%20Aid%20Beauty%20Pure%20Skin%20Face%20Cleanser.jpg?raw=true', price:'₹1,350', desc:'Ultra gentle face cleanser that works for combination skin without over-drying any zone.', benefits:['PH balanced','Free of harsh sulfates','Anti-irritant complex','For sensitive combo skin'], badge:'', link:'https://www.nykaa.com/first-aid-beauty-pure-skin-face-cleanser/p/12939370' }
 ];
 
+// ===== BLOG POSTS =====
 const blogPosts = [
-  { title:'The Science of Sebum: Why Your Skin Gets Oily', img:'🔬', date:'June 10, 2025', category:'Education', content:'Sebum is your skin\'s natural oil produced by sebaceous glands. While often seen as the enemy, it actually plays a vital role in protecting your skin barrier. Learn why balance is key to healthy, glowing skin.' },
-  { title:'Hyaluronic Acid: The Ultimate Hydration Guide', img:'💧', date:'May 28, 2025', category:'Ingredients', content:'Hyaluronic acid can hold up to 1,000 times its weight in water, making it an exceptional humectant. Discover how to use it correctly — applying to damp skin and sealing with a moisturizer is essential.' },
-  { title:'How to Build a Minimal Skincare Routine', img:'✨', date:'May 15, 2025', category:'Routines', content:'Less is often more in skincare. A cleanser, moisturizer, and sunscreen can be all you need for healthy skin. Building slowly helps identify what works for your unique skin type.' },
-  { title:'SPF Every Day: Why Sun Protection is Non-Negotiable', img:'☀️', date:'May 2, 2025', category:'Sun Care', content:'UV exposure is responsible for up to 90% of visible skin aging. Daily SPF 30+ application — even on cloudy days — is the single most impactful anti-aging step you can take.' },
-  { title:'Retinol for Beginners: What You Need to Know', img:'🌙', date:'Apr 20, 2025', category:'Anti-Aging', content:'Retinol is one of the most well-researched skincare ingredients for reducing fine lines and improving texture. However, starting low and slow is essential to avoid irritation and purging.' },
-  { title:'Combination Skin: The Guide to Multi-Zoning', img:'🗺️', date:'Apr 8, 2025', category:'Skin Types', content:'Managing combination skin effectively means recognizing that different facial zones have different needs. Multi-masking and zone-specific treatments help you address oiliness and dryness simultaneously.' }
+  { id:0, title:'The Science of Sebum: Why Your Skin Gets Oily', img:'🔬', date:'June 10, 2025', category:'Education', excerpt:"Sebum is your skin's natural oil produced by sebaceous glands. While often seen as the enemy, it actually plays a vital role in protecting your skin barrier.", color:'#ffecd2', fullContent:`<p>Sebum is a waxy, oily substance produced by the sebaceous glands. While excess sebum is commonly associated with acne and oily skin, it actually serves several critical biological functions.</p><h4>What Does Sebum Actually Do?</h4><p>Sebum forms a protective barrier on the skin's surface that helps prevent water loss, protects against environmental pollutants, and carries antioxidants like vitamin E to the surface. It also has mild antimicrobial properties.</p><blockquote>Your skin's natural oils are not your enemy — they are your first line of defence against the world.</blockquote><h4>Why Does Sebum Production Vary?</h4><p>Sebaceous glands are influenced by hormones — particularly androgens like testosterone — which is why sebum production surges during puberty and can fluctuate during menstrual cycles and pregnancy.</p><ul><li>Genetics play the largest role in baseline sebum production</li><li>Diet, particularly high-glycaemic foods and dairy, can increase sebum</li><li>Hot, humid climates stimulate more sebum output</li><li>Over-cleansing strips sebum and triggers a rebound overproduction</li></ul>` },
+  { id:1, title:'Hyaluronic Acid: The Ultimate Hydration Guide', img:'💧', date:'May 28, 2025', category:'Ingredients', excerpt:"Hyaluronic acid can hold up to 1,000 times its weight in water, making it an exceptional humectant. Discover how to use it correctly.", color:'#ffdde1', fullContent:`<p>Hyaluronic acid (HA) is one of the most celebrated skincare ingredients. It's a naturally occurring polysaccharide found in the skin, connective tissue, and eyes. Its primary function is retaining water to keep tissues well-lubricated and moist.</p><h4>How Does It Work?</h4><p>As a humectant, hyaluronic acid attracts water molecules from the environment and the deeper layers of skin. A single HA molecule can hold up to 1,000 times its own weight in water.</p><blockquote>Hyaluronic acid doesn't add moisture — it captures and holds the moisture already around you.</blockquote><h4>The Critical Application Rule</h4><p>Apply HA to damp skin. If you apply it to dry skin in a dry environment, it will pull moisture from deeper skin layers — actually dehydrating you further. Always apply immediately after washing while skin is slightly moist.</p>` },
+  { id:2, title:'How to Build a Minimal Skincare Routine', img:'✨', date:'May 15, 2025', category:'Routines', excerpt:'Less is often more in skincare. A cleanser, moisturizer, and sunscreen can be all you need for healthy skin.', color:'#d4efdf', fullContent:`<p>The skincare industry generates billions by convincing us we need dozens of products. But dermatologists agree: a minimal, consistent routine often outperforms an elaborate 12-step process.</p><h4>The Non-Negotiable Three</h4><ul><li><strong>Cleanser</strong> — Removes pollution, excess sebum, and SPF</li><li><strong>Moisturiser</strong> — Strengthens the barrier, prevents water loss</li><li><strong>Sunscreen (AM)</strong> — Protects against UV damage</li></ul><blockquote>A routine you actually follow every day beats a perfect routine you skip half the time.</blockquote>` },
+  { id:3, title:'SPF Every Day: Why Sun Protection is Non-Negotiable', img:'☀️', date:'May 2, 2025', category:'Sun Care', excerpt:'UV exposure is responsible for up to 90% of visible skin aging. Daily SPF 30+ application is the single most impactful anti-aging step you can take.', color:'#e8f4fd', fullContent:`<p>If you could only add one product to your skincare routine, dermatologists worldwide agree it should be sunscreen. UV radiation is responsible for approximately 80–90% of visible skin ageing.</p><h4>UV-A vs UV-B</h4><ul><li><strong>UV-B rays</strong> cause sunburn</li><li><strong>UV-A rays</strong> penetrate deeper, cause DNA damage and premature ageing year-round — even through glass</li></ul><blockquote>Sunscreen is the most evidence-backed skin health tool in existence.</blockquote>` },
+  { id:4, title:'Retinol for Beginners: What You Need to Know', img:'🌙', date:'Apr 20, 2025', category:'Anti-Aging', excerpt:'Retinol is one of the most well-researched skincare ingredients for reducing fine lines and improving texture. Starting low and slow is essential.', color:'#fef9e7', fullContent:`<p>Retinol is a derivative of vitamin A and one of the most extensively studied skincare ingredients. Decades of clinical research support its effectiveness for reducing fine lines, improving skin texture, and stimulating collagen production.</p><blockquote>Retinol is a long game. The results at month three are completely different from week one.</blockquote><h4>How to Start</h4><ul><li>Start with 0.025%–0.05% concentration</li><li>Use only twice a week initially</li><li>Apply only at night</li><li>Always follow with moisturiser</li></ul>` },
+  { id:5, title:'Combination Skin: The Guide to Multi-Zoning', img:'🗺️', date:'Apr 8, 2025', category:'Skin Types', excerpt:'Managing combination skin effectively means recognizing that different facial zones have different needs.', color:'#fce4ec', fullContent:`<p>Combination skin is the most common skin type globally — yet it's also the most misunderstood. Because it presents with both oily and dry zones on the same face, generic products frequently make one area better while worsening the other.</p><blockquote>Combination skin isn't a problem to be fixed — it's a map that tells you exactly what each area of your face needs.</blockquote>` }
 ];
 
 const videos = [
@@ -1141,15 +1289,6 @@ const videos = [
   { title:'How to Layer Skincare Products', channel:'Dr. Aanchal MD', id:'MKi8ueZGuj0', topic:'Routine' },
   { title:'Best Affordable Skincare Products 2026', channel:'Dr. Aleksandra Brown', id:'KsoHt0kS_Hc', topic:'Products' },
   { title:'Understanding Skincare Ingredients', channel:'April Basi', id:'7Or2e2yAei0', topic:'Education' }
-];  
-
-const dermatologists = [
-  { name:'Dr. Priya Sharma', spec:'Dermatology & Cosmetology', loc:'Connaught Place, New Delhi', phone:'+91 98765 43210', rating:'⭐⭐⭐⭐⭐', icon:'👩‍⚕️' },
-  { name:'Dr. Rahul Mehta', spec:'Clinical Dermatology', loc:'Bandra West, Mumbai', phone:'+91 98765 12345', rating:'⭐⭐⭐⭐½', icon:'👨‍⚕️' },
-  { name:'Dr. Ananya Krishnan', spec:'Aesthetic Dermatology', loc:'Indiranagar, Bengaluru', phone:'+91 99887 65432', rating:'⭐⭐⭐⭐⭐', icon:'👩‍⚕️' },
-  { name:'Dr. Vivek Gupta', spec:'Pediatric & Adult Dermatology', loc:'Salt Lake, Kolkata', phone:'+91 98654 32100', rating:'⭐⭐⭐⭐', icon:'👨‍⚕️' },
-  { name:'Dr. Sonal Desai', spec:'Trichology & Dermatology', loc:'Banjara Hills, Hyderabad', phone:'+91 90876 54321', rating:'⭐⭐⭐⭐⭐', icon:'👩‍⚕️' },
-  { name:'Dr. Arun Nair', spec:'Cosmetic & Medical Dermatology', loc:'T. Nagar, Chennai', phone:'+91 91234 56789', rating:'⭐⭐⭐⭐½', icon:'👨‍⚕️' }
 ];
 
 const trackerMorning = [
@@ -1169,7 +1308,10 @@ const trackerNight = [
 
 // ===== STATE =====
 let currentSkin = 'oily';
-let currentDetailPanel = 'desc';
+let dermMap = null;
+let dermUserLat = null;
+let dermUserLng = null;
+let dermMarkers = [];
 let trackerState = JSON.parse(localStorage.getItem('gg_tracker') || '{}');
 let streakData = JSON.parse(localStorage.getItem('gg_streak') || '{"days":[],"count":0}');
 
@@ -1178,7 +1320,6 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   window.scrollTo(0,0);
-  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
   if (name === 'home') initReveal();
   if (name === 'products') renderProducts('all');
   if (name === 'tracker') renderTracker();
@@ -1186,7 +1327,6 @@ function showPage(name) {
   if (name === 'videos') renderVideos();
   if (name === 'dermatologist') renderDerms();
   if (name === 'weather') initWeather();
-  // close mobile menu
   document.getElementById('navLinks').classList.remove('open');
 }
 
@@ -1194,10 +1334,256 @@ function toggleMenu() {
   document.getElementById('navLinks').classList.toggle('open');
 }
 
+// ===== HAVERSINE DISTANCE (metres) =====
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000; // Earth radius in metres
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function formatDist(metres) {
+  return metres >= 1000 ? (metres/1000).toFixed(1)+' km' : Math.round(metres)+' m';
+}
+
+// ===== OVERPASS API — fetch real dermatologists near coords =====
+async function fetchDermsNearby(lat, lng, radiusMetres) {
+  // Query for dermatology clinics, doctors, and hospitals near the point
+  const query = `
+    [out:json][timeout:25];
+    (
+      node["healthcare"="doctor"]["healthcare:speciality"~"dermatology",i](around:${radiusMetres},${lat},${lng});
+      node["amenity"="clinic"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
+      node["amenity"="doctors"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
+      node["shop"="beauty"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
+      way["healthcare"="doctor"]["healthcare:speciality"~"dermatology",i](around:${radiusMetres},${lat},${lng});
+      way["amenity"="clinic"]["name"~"derma|skin",i](around:${radiusMetres},${lat},${lng});
+    );
+    out center;
+  `;
+  const url = 'https://overpass-api.de/api/interpreter';
+  const res = await fetch(url, {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(query)
+  });
+  const data = await res.json();
+  return data.elements || [];
+}
+
+// ===== GEOCODE city name → lat/lng via Nominatim =====
+async function geocodeCity(cityName) {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityName)}&format=json&limit=1`;
+  const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+  const data = await res.json();
+  if (!data.length) return null;
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), displayName: data[0].display_name };
+}
+
+// ===== RENDER DERM PAGE =====
+function renderDerms() {
+  // Init map skeleton then request location
+  setTimeout(() => {
+    initDermMapSkeleton();
+    useDermGeoLocation();
+  }, 100);
+}
+
+function initDermMapSkeleton() {
+  if (dermMap) { dermMap.remove(); dermMap = null; }
+  const mapEl = document.getElementById('dermMap');
+  if (!mapEl) return;
+  // Start centred on India
+  dermMap = L.map('dermMap', { zoomControl: true, scrollWheelZoom: false })
+             .setView([20.5937, 78.9629], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 18
+  }).addTo(dermMap);
+}
+
+// ===== USE BROWSER GEOLOCATION =====
+function useDermGeoLocation() {
+  setStatus('⏳ Requesting your location…');
+  if (!navigator.geolocation) {
+    setStatus('⚠️ Geolocation not supported. Please search by city name above.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      dermUserLat = pos.coords.latitude;
+      dermUserLng = pos.coords.longitude;
+      loadDermsForCoords(dermUserLat, dermUserLng, true);
+    },
+    err => {
+      const msgs = {
+        1: 'Location access denied. Please search by city name above.',
+        2: 'Location unavailable. Please search by city name above.',
+        3: 'Location request timed out. Please search by city name above.'
+      };
+      setStatus('⚠️ ' + (msgs[err.code] || 'Could not get location. Please search by city name.'));
+    },
+    { timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+// ===== SEARCH BY CITY NAME =====
+async function searchDermCity() {
+  const cityInput = document.getElementById('dermCityInput').value.trim();
+  if (!cityInput) { setStatus('⚠️ Please enter a city name.'); return; }
+  setStatus('🔍 Looking up "' + cityInput + '"…');
+  const result = await geocodeCity(cityInput);
+  if (!result) {
+    setStatus('❌ City "' + cityInput + '" not found. Try a different spelling.');
+    return;
+  }
+  dermUserLat = result.lat;
+  dermUserLng = result.lng;
+  loadDermsForCoords(dermUserLat, dermUserLng, false);
+}
+
+// ===== RADIUS CHANGE =====
+function onRadiusChange() {
+  if (dermUserLat !== null && dermUserLng !== null) {
+    loadDermsForCoords(dermUserLat, dermUserLng, false);
+  }
+}
+
+// ===== EXPAND RADIUS BUTTON =====
+function expandRadius() {
+  const sel = document.getElementById('radiusSelect');
+  const vals = ['5000','10000','20000','50000','100000'];
+  const idx = vals.indexOf(sel.value);
+  if (idx < vals.length - 1) { sel.value = vals[idx + 1]; onRadiusChange(); }
+  else { setStatus('⚠️ Already at maximum radius (100 km). No dermatologists found in this area on OpenStreetMap.'); }
+}
+
+// ===== CORE: Load derms for given coords =====
+async function loadDermsForCoords(lat, lng, isUserLocation) {
+  const radiusMetres = parseInt(document.getElementById('radiusSelect').value);
+  const radiusLabel = radiusMetres >= 1000 ? (radiusMetres/1000)+' km' : radiusMetres+' m';
+
+  setStatus('🔍 Searching for dermatologists within ' + radiusLabel + '…');
+  document.getElementById('dermGrid').innerHTML = '';
+  document.getElementById('noDermsMsg').style.display = 'none';
+  document.getElementById('noResultsRadius').textContent = radiusLabel;
+
+  // Clear existing markers
+  dermMarkers.forEach(m => dermMap.removeLayer(m));
+  dermMarkers = [];
+
+  // Pan map to user location
+  dermMap.setView([lat, lng], 13);
+
+  // Add user location marker
+  const userIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:18px;height:18px;border-radius:50%;background:#c9856a;border:3px solid white;box-shadow:0 2px 10px rgba(201,133,106,.6)"></div>`,
+    iconSize: [18, 18], iconAnchor: [9, 9]
+  });
+  const userMarker = L.marker([lat, lng], { icon: userIcon })
+    .addTo(dermMap)
+    .bindPopup('<div style="font-family:DM Sans,sans-serif;padding:8px;font-weight:600;color:#c9856a">📍 ' + (isUserLocation ? 'You are here' : 'Search location') + '</div>');
+  dermMarkers.push(userMarker);
+
+  // Draw radius circle
+  const circle = L.circle([lat, lng], {
+    radius: radiusMetres,
+    color: '#c9856a', fillColor: '#c9856a', fillOpacity: 0.06, weight: 1.5
+  }).addTo(dermMap);
+  dermMarkers.push(circle);
+
+  try {
+    const elements = await fetchDermsNearby(lat, lng, radiusMetres);
+
+    // Build dermatologist objects, compute distance, sort by proximity
+    const derms = elements
+      .filter(el => el.lat || el.center)
+      .map(el => {
+        const elLat = el.lat || el.center.lat;
+        const elLng = el.lon || el.center.lon;
+        const dist = haversineDistance(lat, lng, elLat, elLng);
+        const tags = el.tags || {};
+        return {
+          name: tags.name || tags['name:en'] || 'Dermatology Clinic',
+          spec: tags['healthcare:speciality'] || tags.healthcare || 'Dermatologist',
+          address: [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ') || tags['addr:full'] || '',
+          phone: tags.phone || tags['contact:phone'] || '',
+          website: tags.website || tags['contact:website'] || '',
+          lat: elLat, lng: elLng,
+          dist
+        };
+      })
+      .filter(d => d.dist <= radiusMetres)   // strict radius filter
+      .sort((a, b) => a.dist - b.dist);
+
+    if (derms.length === 0) {
+      setStatus('📍 Location found — no dermatologists on OpenStreetMap within ' + radiusLabel + '. Try a larger radius.');
+      document.getElementById('noDermsMsg').style.display = 'block';
+      return;
+    }
+
+    setStatus('✅ Found ' + derms.length + ' dermatologist' + (derms.length > 1 ? 's' : '') + ' within ' + radiusLabel + ' — sorted by distance.');
+
+    // Render derm cards
+    renderDermCards(derms);
+
+    // Add markers
+    const dermIcon = L.divIcon({
+      className: '',
+      html: `<div style="width:36px;height:36px;border-radius:50% 50% 50% 0;background:linear-gradient(135deg,#c9856a,#a8604a);border:3px solid white;box-shadow:0 4px 14px rgba(168,96,74,.45);display:flex;align-items:center;justify-content:center;font-size:16px;transform:rotate(-45deg);cursor:pointer"><span style="transform:rotate(45deg)">🩺</span></div>`,
+      iconSize: [36, 36], iconAnchor: [18, 36], popupAnchor: [0, -38]
+    });
+
+    derms.forEach(d => {
+      const marker = L.marker([d.lat, d.lng], { icon: dermIcon }).addTo(dermMap);
+      marker.bindPopup(`
+        <div class="map-popup">
+          <h5>🩺 ${d.name}</h5>
+          <div class="popup-spec">${d.spec}</div>
+          ${d.address ? `<div class="popup-loc">📍 ${d.address}</div>` : ''}
+          ${d.phone ? `<div class="popup-phone"><a href="tel:${d.phone}">📞 ${d.phone}</a></div>` : ''}
+          <div class="popup-dist">📏 ${formatDist(d.dist)} away</div>
+        </div>`);
+      dermMarkers.push(marker);
+    });
+
+    // Fit map to show all markers
+    const allPoints = [[lat, lng], ...derms.map(d => [d.lat, d.lng])];
+    dermMap.fitBounds(L.latLngBounds(allPoints).pad(0.15));
+
+  } catch(err) {
+    console.error('Overpass error:', err);
+    setStatus('❌ Could not fetch data. Check your internet connection and try again.');
+  }
+}
+
+// ===== RENDER DERM CARDS =====
+function renderDermCards(derms) {
+  const icons = ['👩‍⚕️','👨‍⚕️'];
+  document.getElementById('dermGrid').innerHTML = derms.map((d, i) => `
+    <div class="derm-card">
+      <div class="derm-avatar">${icons[i % 2]}</div>
+      <h4>${d.name}</h4>
+      <div class="spec">${d.spec}</div>
+      <span class="derm-distance-badge">📏 ${formatDist(d.dist)} away</span>
+      ${d.address ? `<div class="derm-loc"><i class="fas fa-map-marker-alt" style="color:var(--terracotta)"></i> ${d.address}</div>` : ''}
+      ${d.phone ? `<div class="derm-phone"><i class="fas fa-phone" style="color:var(--sage-dark)"></i> <a href="tel:${d.phone}">${d.phone}</a></div>` : ''}
+      ${d.website ? `<div class="derm-loc"><i class="fas fa-globe" style="color:var(--terracotta)"></i> <a href="${d.website}" target="_blank" rel="noopener">Visit Website</a></div>` : ''}
+    </div>`).join('');
+}
+
+function setStatus(msg) {
+  document.getElementById('mapStatusText').textContent = msg;
+}
+
 // ===== SKIN DETAIL =====
 function showSkinDetail(type) {
   currentSkin = type;
-  currentDetailPanel = 'desc';
   const d = skinData[type];
   document.getElementById('skinDetailHero').innerHTML = `
     <div class="skin-detail-icon ${d.iconClass}">${d.icon}</div>
@@ -1212,7 +1598,6 @@ function showSkinDetail(type) {
 }
 
 function showDetailPanel(panel, btn) {
-  currentDetailPanel = panel;
   document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   renderDetailPanel(panel);
@@ -1230,14 +1615,11 @@ function renderDetailPanel(panel) {
   } else if (panel === 'routine') {
     c.innerHTML = `<div class="detail-panel active"><h3 class="tab-content-header">Recommended Skincare Routine</h3>
       <div class="routine-steps">${d.routine.map((r,i)=>`
-        <div class="routine-step">
-          <div class="step-num">${i+1}</div>
-          <div><h5>${r.step}</h5><p>${r.desc}</p></div>
-        </div>`).join('')}</div></div>`;
+        <div class="routine-step"><div class="step-num">${i+1}</div>
+        <div><h5>${r.step}</h5><p>${r.desc}</p></div></div>`).join('')}</div></div>`;
   } else if (panel === 'tips') {
     c.innerHTML = `<div class="detail-panel active"><h3 class="tab-content-header">Pro Tips for ${d.name}</h3>
-      <div class="info-grid">${d.tips.map(t=>`
-        <div class="info-box"><ul><li>${t}</li></ul></div>`).join('')}</div></div>`;
+      <div class="info-grid">${d.tips.map(t=>`<div class="info-box"><ul><li>${t}</li></ul></div>`).join('')}</div></div>`;
   } else if (panel === 'products') {
     const typeMap = {oily:'oily',dry:'dry',combo:'combo'};
     const ps = products.filter(p => p.type === typeMap[currentSkin]);
@@ -1250,11 +1632,11 @@ function renderDetailPanel(panel) {
 function productCard(p) {
   return `<div class="product-card" onclick="showProductDetail(${p.id})">
     <div class="product-img">
-      <img src="${p.icon}" alt="${p.name}" style="width:100%; height:100%; object-fit:cover;">
+      <img src="${p.icon}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;">
       ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
     </div>
     <div class="product-body">
-      <div class="product-type">${p.type === 'oily' ? 'Oily Skin' : p.type === 'dry' ? 'Dry Skin' : 'Combination'}</div>
+      <div class="product-type">${p.type==='oily'?'Oily Skin':p.type==='dry'?'Dry Skin':'Combination'}</div>
       <h3>${p.name}</h3>
       <p>${p.desc}</p>
       <div class="product-footer">
@@ -1296,7 +1678,7 @@ function showProductDetail(id) {
       <button class="buy-now-btn" onclick="window.open('${p.link}','_blank')">
         <i class="fas fa-shopping-cart"></i> Buy Now — ${p.price}
       </button>
-      <p style="font-size:.78rem;color:var(--text-light);margin-top:12px">*Redirects to external derma website in new tab</p>
+      <p style="font-size:.78rem;color:var(--text-light);margin-top:12px">*Redirects to external retailer in new tab</p>
     </div>`;
   showPage('productdetail');
 }
@@ -1305,13 +1687,13 @@ function showProductDetail(id) {
 function renderTracker() {
   const today = new Date().toDateString();
   document.getElementById('morningTracker').innerHTML = trackerMorning.map(item => `
-    <div class="tracker-item ${trackerState[today+'_'+item.id] ? 'done' : ''}" onclick="toggleTracker('${today}','${item.id}',this)">
-      <div class="tracker-cb">${trackerState[today+'_'+item.id] ? '✓' : ''}</div>
+    <div class="tracker-item ${trackerState[today+'_'+item.id]?'done':''}" onclick="toggleTracker('${today}','${item.id}',this)">
+      <div class="tracker-cb">${trackerState[today+'_'+item.id]?'✓':''}</div>
       <div class="tracker-text"><h5>${item.step}</h5><p>${item.desc}</p></div>
     </div>`).join('');
   document.getElementById('nightTracker').innerHTML = trackerNight.map(item => `
-    <div class="tracker-item ${trackerState[today+'_'+item.id] ? 'done' : ''}" onclick="toggleTracker('${today}','${item.id}',this)">
-      <div class="tracker-cb">${trackerState[today+'_'+item.id] ? '✓' : ''}</div>
+    <div class="tracker-item ${trackerState[today+'_'+item.id]?'done':''}" onclick="toggleTracker('${today}','${item.id}',this)">
+      <div class="tracker-cb">${trackerState[today+'_'+item.id]?'✓':''}</div>
       <div class="tracker-text"><h5>${item.step}</h5><p>${item.desc}</p></div>
     </div>`).join('');
   renderStreak();
@@ -1328,14 +1710,11 @@ function toggleTracker(date, id, el) {
 
 function checkDayComplete(date) {
   const allKeys = [...trackerMorning, ...trackerNight].map(i => date+'_'+i.id);
-  const done = allKeys.filter(k => trackerState[k]).length;
-  if (done === allKeys.length) {
-    if (!streakData.days.includes(date)) {
-      streakData.days.push(date);
-      streakData.count = streakData.days.length;
-      localStorage.setItem('gg_streak', JSON.stringify(streakData));
-      renderStreak();
-    }
+  if (allKeys.every(k => trackerState[k]) && !streakData.days.includes(date)) {
+    streakData.days.push(date);
+    streakData.count = streakData.days.length;
+    localStorage.setItem('gg_streak', JSON.stringify(streakData));
+    renderStreak();
   }
 }
 
@@ -1343,7 +1722,7 @@ function renderStreak() {
   document.getElementById('streakNum').textContent = streakData.count;
   const last7 = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
+    const d = new Date(); d.setDate(d.getDate()-i);
     last7.push(d.toDateString());
   }
   document.getElementById('streakDays').innerHTML = last7.map(d => {
@@ -1369,7 +1748,7 @@ function initWeather() {
 
 async function fetchWeather() {
   const city = document.getElementById('cityInput').value.trim() || 'Mumbai';
-  const apiKey = 'bd5e378503939ddaee76f12ad7a97608'; // free demo key
+  const apiKey = 'bd5e378503939ddaee76f12ad7a97608';
   const result = document.getElementById('weatherResult');
   const tipsGrid = document.getElementById('weatherTipsGrid');
   result.innerHTML = '<p style="color:var(--text-light);font-style:italic">Fetching weather data...</p>';
@@ -1381,7 +1760,6 @@ async function fetchWeather() {
     const temp = Math.round(data.main.temp);
     const humidity = data.main.humidity;
     const desc = data.weather[0].description;
-    const iconCode = data.weather[0].icon;
     const weatherEmoji = getWeatherEmoji(data.weather[0].main);
     result.innerHTML = `
       <div class="weather-widget">
@@ -1407,39 +1785,38 @@ async function fetchWeather() {
 }
 
 function getWeatherEmoji(main) {
-  const map = {Clear:'☀️',Clouds:'☁️',Rain:'🌧️',Drizzle:'🌦️',Thunderstorm:'⛈️',Snow:'❄️',Mist:'🌫️',Haze:'🌫️'};
-  return map[main] || '🌡️';
+  return {Clear:'☀️',Clouds:'☁️',Rain:'🌧️',Drizzle:'🌦️',Thunderstorm:'⛈️',Snow:'❄️',Mist:'🌫️',Haze:'🌫️'}[main] || '🌡️';
 }
 
 function getWeatherTips(temp, humidity) {
   const tips = [];
   if (temp > 30) {
-    tips.push({icon:'🧊',title:'Use Gel Products',text:'Hot weather increases sebum production. Swap heavy creams for lightweight gel moisturizers and gel-based sunscreens.'});
-    tips.push({icon:'💧',title:'Hydrate More',text:'Drink extra water today. Dehydration from heat affects skin elasticity. Carry a facial mist for refreshing hydration.'});
-    tips.push({icon:'☀️',title:'Reapply SPF',text:'High temperature means intense UV exposure. Reapply sunscreen every 2 hours when outdoors.'});
+    tips.push({icon:'🧊',title:'Use Gel Products',text:'Hot weather increases sebum. Swap heavy creams for lightweight gel moisturizers.'});
+    tips.push({icon:'💧',title:'Hydrate More',text:'Carry a facial mist. Dehydration from heat affects skin elasticity.'});
+    tips.push({icon:'☀️',title:'Reapply SPF',text:'Intense UV today. Reapply sunscreen every 2 hours when outdoors.'});
   } else if (temp < 15) {
-    tips.push({icon:'🧴',title:'Layer Heavy Moisturizer',text:'Cold weather depletes skin moisture. Use a rich ceramide cream or facial oil to protect your barrier from wind and cold.'});
-    tips.push({icon:'🏠',title:'Use a Humidifier',text:'Heating systems dry indoor air. A bedroom humidifier adds moisture back and prevents skin from feeling tight overnight.'});
-    tips.push({icon:'🌡️',title:'Avoid Hot Showers',text:'Though tempting in the cold, hot showers strip natural oils. Use lukewarm water and apply moisturizer immediately after.'});
+    tips.push({icon:'🧴',title:'Layer Heavy Moisturizer',text:'Cold depletes skin moisture. Use a rich ceramide cream or facial oil.'});
+    tips.push({icon:'🏠',title:'Use a Humidifier',text:'Heating systems dry indoor air. A bedroom humidifier prevents tightness overnight.'});
+    tips.push({icon:'🌡️',title:'Avoid Hot Showers',text:'Hot showers strip natural oils. Use lukewarm water and moisturize immediately after.'});
   } else {
-    tips.push({icon:'⚖️',title:'Balanced Routine',text:'Mild temperatures allow for a standard skincare routine. Focus on consistent cleansing, moisturizing, and SPF application.'});
-    tips.push({icon:'✨',title:'Great Time to Exfoliate',text:'Comfortable temperatures are ideal for introducing exfoliants like AHAs. Skin tolerates them better in mild weather.'});
-    tips.push({icon:'🌿',title:'Maintain Your Routine',text:'Consistent routines build healthy habits. Moderate weather is perfect for tracking which products truly work for your skin.'});
+    tips.push({icon:'⚖️',title:'Balanced Routine',text:'Mild temps allow a standard skincare routine. Consistent cleansing + SPF is key.'});
+    tips.push({icon:'✨',title:'Great Time to Exfoliate',text:'Comfortable temperatures are ideal for introducing AHAs.'});
+    tips.push({icon:'🌿',title:'Maintain Your Routine',text:'Moderate weather is perfect for tracking which products truly work.'});
   }
   if (humidity > 70) {
-    tips.push({icon:'🌊',title:'Oil Control Day',text:'High humidity increases oiliness. Switch to a mattifying primer or SPF and carry blotting papers to manage shine.'});
+    tips.push({icon:'🌊',title:'Oil Control Day',text:'High humidity increases oiliness. Use a mattifying primer and carry blotting papers.'});
   } else if (humidity < 30) {
-    tips.push({icon:'💨',title:'Extra Hydration Needed',text:'Low humidity pulls moisture from your skin. Apply hyaluronic acid serum to damp skin and seal with moisturizer.'});
+    tips.push({icon:'💨',title:'Extra Hydration Needed',text:'Low humidity pulls moisture from skin. Apply HA serum to damp skin and seal with moisturizer.'});
   }
   return tips;
 }
 
 function getDefaultWeatherTips() {
   return [
-    {icon:'💧',title:'Stay Hydrated',text:'Drink at least 8 glasses of water daily for healthy, plump skin from the inside out.'},
-    {icon:'☀️',title:'Daily SPF',text:'Apply broad-spectrum SPF 30+ every morning, regardless of weather conditions.'},
-    {icon:'🌙',title:'Night Repair',text:'Use overnight masks or serums to repair and restore your skin while you sleep.'},
-    {icon:'🌿',title:'Consistency is Key',text:'The best skincare routine is the one you follow consistently, every morning and night.'}
+    {icon:'💧',title:'Stay Hydrated',text:'Drink at least 8 glasses of water daily.'},
+    {icon:'☀️',title:'Daily SPF',text:'Apply broad-spectrum SPF 30+ every morning.'},
+    {icon:'🌙',title:'Night Repair',text:'Use overnight masks or serums to restore skin while you sleep.'},
+    {icon:'🌿',title:'Consistency is Key',text:'The best routine is the one you follow every morning and night.'}
   ];
 }
 
@@ -1447,15 +1824,26 @@ function getDefaultWeatherTips() {
 function renderBlog() {
   const colors = ['#ffecd2','#ffdde1','#d4efdf','#e8f4fd','#fef9e7','#fce4ec'];
   document.getElementById('blogGrid').innerHTML = blogPosts.map((b,i) => `
-    <div class="blog-card">
+    <div class="blog-card" onclick="showBlogDetail(${b.id})">
       <div class="blog-img" style="background:${colors[i%colors.length]}">${b.img}</div>
       <div class="blog-body">
         <div class="blog-meta"><span>📅 ${b.date}</span><span>🏷️ ${b.category}</span></div>
         <h3>${b.title}</h3>
-        <p>${b.content}</p>
-        <span class="read-more">Read More →</span>
+        <p>${b.excerpt}</p>
+        <span class="read-more">Read Full Article →</span>
       </div>
     </div>`).join('');
+}
+
+function showBlogDetail(id) {
+  const post = blogPosts[id];
+  const colors = ['#ffecd2','#ffdde1','#d4efdf','#e8f4fd','#fef9e7','#fce4ec'];
+  document.getElementById('blogDetailContent').innerHTML = `
+    <div class="blog-detail-hero-img" style="background:${colors[id%colors.length]}">${post.img}</div>
+    <div class="blog-detail-meta"><span>📅 ${post.date}</span><span>🏷️ ${post.category}</span></div>
+    <h1 class="blog-detail-title">${post.title}</h1>
+    <div class="blog-detail-body">${post.fullContent}</div>`;
+  showPage('blogdetail');
 }
 
 // ===== VIDEOS =====
@@ -1463,23 +1851,7 @@ function renderVideos() {
   document.getElementById('videoGrid').innerHTML = videos.map(v => `
     <div class="video-card">
       <iframe class="video-embed" src="https://www.youtube.com/embed/${v.id}" title="${v.title}" allowfullscreen loading="lazy"></iframe>
-      <div class="video-card-body">
-        <h4>${v.title}</h4>
-        <p>📺 ${v.channel} · 🏷️ ${v.topic}</p>
-      </div>
-    </div>`).join('');
-}
-
-// ===== DERMATOLOGISTS =====
-function renderDerms() {
-  document.getElementById('dermGrid').innerHTML = dermatologists.map(d => `
-    <div class="derm-card">
-      <div class="derm-avatar">${d.icon}</div>
-      <h4>${d.name}</h4>
-      <div class="spec">${d.spec}</div>
-      <div style="font-size:.82rem;margin-bottom:8px">${d.rating}</div>
-      <div class="derm-loc"><i class="fas fa-map-marker-alt" style="color:var(--terracotta)"></i> ${d.loc}</div>
-      <div class="derm-phone"><i class="fas fa-phone" style="color:var(--sage-dark)"></i> <a href="tel:${d.phone}">${d.phone}</a></div>
+      <div class="video-card-body"><h4>${v.title}</h4><p>📺 ${v.channel} · 🏷️ ${v.topic}</p></div>
     </div>`).join('');
 }
 
@@ -1489,47 +1861,35 @@ function showAuthMsg(id, type, msg) {
   el.className = 'auth-msg '+type;
   el.textContent = msg;
 }
-
 function handleSignIn() {
   const email = document.getElementById('siEmail').value;
   const pass = document.getElementById('siPass').value;
-  if (!email || !pass) { showAuthMsg('signinMsg','error','Please fill in all fields.'); return; }
-  if (!window._fbFns) { showAuthMsg('signinMsg','error','Firebase not configured. Please add your Firebase config.'); return; }
-  window._fbFns.signIn(email, pass)
-    .then(() => { showPage('home'); })
-    .catch(e => showAuthMsg('signinMsg','error', e.message.replace('Firebase: ','')));
+  if (!email||!pass) { showAuthMsg('signinMsg','error','Please fill in all fields.'); return; }
+  if (!window._fbFns) { showAuthMsg('signinMsg','error','Firebase not configured.'); return; }
+  window._fbFns.signIn(email,pass).then(()=>showPage('home')).catch(e=>showAuthMsg('signinMsg','error',e.message.replace('Firebase: ','')));
 }
-
 function handleSignUp() {
   const email = document.getElementById('suEmail').value;
   const pass = document.getElementById('suPass').value;
-  if (!email || !pass) { showAuthMsg('signupMsg','error','Please fill in all fields.'); return; }
-  if (!window._fbFns) { showAuthMsg('signupMsg','error','Firebase not configured. Please add your Firebase config.'); return; }
-  window._fbFns.signUp(email, pass)
-    .then(() => { showAuthMsg('signupMsg','success','Account created! Welcome to Glow & Go.'); setTimeout(()=>showPage('home'),1500); })
-    .catch(e => showAuthMsg('signupMsg','error', e.message.replace('Firebase: ','')));
+  if (!email||!pass) { showAuthMsg('signupMsg','error','Please fill in all fields.'); return; }
+  if (!window._fbFns) { showAuthMsg('signupMsg','error','Firebase not configured.'); return; }
+  window._fbFns.signUp(email,pass).then(()=>{ showAuthMsg('signupMsg','success','Account created! Welcome to Glow & Go.'); setTimeout(()=>showPage('home'),1500); }).catch(e=>showAuthMsg('signupMsg','error',e.message.replace('Firebase: ','')));
 }
-
 function handleGoogleSignIn() {
-  if (!window._fbFns) { alert('Firebase not configured. Please add your Firebase config.'); return; }
-  window._fbFns.googleSignIn()
-    .then(() => showPage('home'))
-    .catch(e => console.error(e));
+  if (!window._fbFns) { alert('Firebase not configured.'); return; }
+  window._fbFns.googleSignIn().then(()=>showPage('home')).catch(e=>console.error(e));
 }
-
 function handleForgotPassword() {
   const email = document.getElementById('fpEmail').value;
   if (!email) { showAuthMsg('forgotMsg','error','Please enter your email address.'); return; }
-  if (!window._fbFns) { showAuthMsg('forgotMsg','error','Firebase not configured. Please add your Firebase config.'); return; }
-  window._fbFns.resetPwd(email)
-    .then(() => showAuthMsg('forgotMsg','success','Password reset link sent to your email! Check your inbox.'))
-    .catch(e => showAuthMsg('forgotMsg','error', e.message.replace('Firebase: ','')));
+  if (!window._fbFns) { showAuthMsg('forgotMsg','error','Firebase not configured.'); return; }
+  window._fbFns.resetPwd(email).then(()=>showAuthMsg('forgotMsg','success','Password reset link sent!')).catch(e=>showAuthMsg('forgotMsg','error',e.message.replace('Firebase: ','')));
 }
 
 // ===== SCROLL REVEAL =====
 function initReveal() {
   const observer = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
   }, { threshold: 0.1 });
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 }
@@ -1540,8 +1900,6 @@ document.addEventListener('DOMContentLoaded', () => {
   renderProducts('all');
   renderBlog();
   renderVideos();
-  renderDerms();
-  renderTracker();
 });
 </script>
 </body>
