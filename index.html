@@ -14,15 +14,15 @@
            sendPasswordResetEmail, signOut, onAuthStateChanged,
            GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAERQ_mPeh7TFLox5ksBEXQrwVeSOp70hc",
-  authDomain: "glowandgo-8c491.firebaseapp.com",
-  projectId: "glowandgo-8c491",
-  storageBucket: "glowandgo-8c491.firebasestorage.app",
-  messagingSenderId: "231824360995",
-  appId: "1:231824360995:web:bf73cfd3cd55fd048dd396",
-  measurementId: "G-S91GF3EF07"
-};
+  const firebaseConfig = {
+    apiKey: "AIzaSyAERQ_mPeh7TFLox5ksBEXQrwVeSOp70hc",
+    authDomain: "glowandgo-8c491.firebaseapp.com",
+    projectId: "glowandgo-8c491",
+    storageBucket: "glowandgo-8c491.firebasestorage.app",
+    messagingSenderId: "231824360995",
+    appId: "1:231824360995:web:bf73cfd3cd55fd048dd396",
+    measurementId: "G-S91GF3EF07"
+  };
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
@@ -38,14 +38,30 @@ const firebaseConfig = {
     googleSignIn: () => signInWithPopup(auth, googleProvider),
     onAuth: (cb) => onAuthStateChanged(auth, cb)
   };
+
   window._fbFns.onAuth(user => {
     const bar = document.getElementById('authBar');
     if (!bar) return;
+
     if (user) {
-      bar.innerHTML = `<span style="color:#c9856a;font-size:.85rem">👤 ${user.email||user.displayName}</span>
+      /* ── Grant access ── */
+      document.body.classList.add('user-authenticated');
+      bar.innerHTML = `
+        <span style="color:#c9856a;font-size:.85rem">👤 ${user.email || user.displayName}</span>
         <button class="nav-btn" onclick="window._fbFns.signOut()">Logout</button>`;
     } else {
+      /* ── Revoke access ── */
+      document.body.classList.remove('user-authenticated');
       bar.innerHTML = `<button class="nav-btn" onclick="showPage('signin')">Sign In</button>`;
+
+      /* If currently on a protected page, bounce to home */
+      const activePage = document.querySelector('.page.active');
+      if (activePage) {
+        const activeId = activePage.id.replace('page-', '');
+        if (PROTECTED_PAGES.has(activeId)) {
+          showPage('home');
+        }
+      }
     }
   });
 </script>
@@ -121,6 +137,61 @@ nav {
 /* ===== PAGE SYSTEM ===== */
 .page { display: none; }
 .page.active { display: block; }
+
+/* ===== AUTH GATE ===== */
+/* Protected content pages – hidden when not authenticated */
+body:not(.user-authenticated) #page-skintypes,
+body:not(.user-authenticated) #page-skindetail,
+body:not(.user-authenticated) #page-products,
+body:not(.user-authenticated) #page-productdetail,
+body:not(.user-authenticated) #page-blog,
+body:not(.user-authenticated) #page-blogdetail,
+body:not(.user-authenticated) #page-videos,
+body:not(.user-authenticated) #page-tracker,
+body:not(.user-authenticated) #page-weather {
+  display: none !important;
+}
+
+/* Hide protected nav links when not authenticated */
+body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
+  display: none !important;
+}
+
+/* ===== TOAST ===== */
+.auth-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--text);
+  color: #fff;
+  padding: 14px 26px;
+  border-radius: 50px;
+  font-size: .88rem;
+  font-weight: 500;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.22);
+  transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s ease;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.auth-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.auth-toast .toast-icon { font-size: 1rem; flex-shrink: 0; }
+.auth-toast .toast-action {
+  background: var(--terracotta);
+  border: none; color: #fff;
+  padding: 5px 14px; border-radius: 30px;
+  font-size: .8rem; font-weight: 600;
+  cursor: pointer; font-family: var(--ff-body);
+  pointer-events: all; margin-left: 4px;
+}
 
 /* ===== HERO ===== */
 .hero {
@@ -660,7 +731,8 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
     <i class="fas fa-bars"></i>
   </button>
   <div class="nav-links" id="navLinks">
-    <button class="nav-link" onclick="showPage('home')">Home</button>
+    <!-- nav-link-home class keeps this visible for unauthenticated users -->
+    <button class="nav-link nav-link-home" onclick="showPage('home')">Home</button>
     <button class="nav-link" onclick="showPage('skintypes')">Skin Types</button>
     <button class="nav-link" onclick="showPage('products')">Products</button>
     <button class="nav-link" onclick="showPage('blog')">Blog</button>
@@ -681,6 +753,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
       <h1>Glow <em>Naturally,</em><br>Go Confidently</h1>
       <p>Your personalized skincare companion. Discover routines tailored to your skin type, track daily habits, and connect with expert knowledge.</p>
       <div class="hero-btns">
+        <!-- These now go through the auth-gated showPage(), so no extra onclick changes needed -->
         <button class="btn-primary" onclick="showPage('skintypes')">Find Your Skin Type</button>
         <button class="btn-outline" onclick="showPage('tracker')">Start Tracking</button>
       </div>
@@ -1051,7 +1124,39 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
   </div>
 </footer>
 
+<!-- ===== AUTH TOAST ===== -->
+<div class="auth-toast" id="authToast">
+  <span class="toast-icon">🔒</span>
+  <span>Please sign in to access this content.</span>
+  <button class="toast-action" onclick="showPage('signin');hideToast()">Sign In</button>
+</div>
+
 <script>
+// ===== AUTH GATE SETS =====
+// Pages that require a logged-in user
+const PROTECTED_PAGES = new Set([
+  'skintypes', 'skindetail', 'products', 'productdetail',
+  'blog', 'blogdetail', 'videos', 'tracker', 'weather'
+]);
+// Pages always accessible (auth pages + home)
+const PUBLIC_PAGES = new Set(['home', 'signin', 'signup', 'forgot']);
+
+function isAuthenticated() {
+  return document.body.classList.contains('user-authenticated');
+}
+
+// ===== TOAST =====
+let _toastTimer = null;
+function showToast() {
+  const t = document.getElementById('authToast');
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(hideToast, 4000);
+}
+function hideToast() {
+  document.getElementById('authToast').classList.remove('show');
+}
+
 // ===== DATA =====
 const skinData = {
   oily: {
@@ -1311,18 +1416,26 @@ let currentDetailPanel = 'desc';
 let trackerState = JSON.parse(localStorage.getItem('gg_tracker') || '{}');
 let streakData = JSON.parse(localStorage.getItem('gg_streak') || '{"days":[],"count":0}');
 
-// ===== PAGE NAV =====
+// ===== PAGE NAV (AUTH-GATED) =====
 function showPage(name) {
+  // Guard: if page is protected and user is not authenticated, bounce to home with toast
+  if (PROTECTED_PAGES.has(name) && !isAuthenticated()) {
+    showToast();
+    name = 'home';
+  }
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  window.scrollTo(0,0);
+  document.getElementById('page-' + name).classList.add('active');
+  window.scrollTo(0, 0);
   document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-  if (name === 'home') initReveal();
+
+  if (name === 'home')     initReveal();
   if (name === 'products') renderProducts('all');
-  if (name === 'tracker') renderTracker();
-  if (name === 'blog') renderBlog();
-  if (name === 'videos') renderVideos();
-  if (name === 'weather') initWeather();
+  if (name === 'tracker')  renderTracker();
+  if (name === 'blog')     renderBlog();
+  if (name === 'videos')   renderVideos();
+  if (name === 'weather')  initWeather();
+
   document.getElementById('navLinks').classList.remove('open');
 }
 
@@ -1332,6 +1445,11 @@ function toggleMenu() {
 
 // ===== SKIN DETAIL =====
 function showSkinDetail(type) {
+  // Also guard showSkinDetail since it calls showPage('skindetail')
+  if (!isAuthenticated()) {
+    showToast();
+    return;
+  }
   currentSkin = type;
   currentDetailPanel = 'desc';
   const d = skinData[type];
@@ -1430,7 +1548,7 @@ function showProductDetail(id) {
         <ul>${p.benefits.map(b=>`<li>${b}</li>`).join('')}</ul>
       </div>
       <button class="buy-now-btn" onclick="window.open('${p.link}','_blank')">
-        <i class="fas fa-shopping-cart"></i> Buy Now — ${p.price}
+        <i class="fas fa-cart-shopping"></i> Buy Now — ${p.price}
       </button>
       <p style="font-size:.78rem;color:var(--text-light);margin-top:12px">*Redirects to external retailer in new tab</p>
     </div>`;
@@ -1498,7 +1616,6 @@ function resetStreak() {
 }
 
 // ===== WEATHER =====
-// Uses wttr.in — free, no API key, no CORS issues, supports any city/town worldwide
 function initWeather() {
   document.getElementById('weatherResult').innerHTML = '';
   document.getElementById('weatherTipsGrid').innerHTML = '';
@@ -1511,28 +1628,19 @@ async function fetchWeather() {
       `<p style="color:var(--clay);font-size:.9rem">Please enter a city name first.</p>`;
     return;
   }
-
   const result = document.getElementById('weatherResult');
   const tipsGrid = document.getElementById('weatherTipsGrid');
-
-  // Show loading state
   result.innerHTML = `
     <div class="weather-loading">
       <div class="spinner"></div>
       <span>Fetching weather for <strong>${cityRaw}</strong>…</span>
     </div>`;
   tipsGrid.innerHTML = '';
-
   try {
-    // wttr.in returns JSON with no API key needed and has no CORS restrictions
     const url = `https://wttr.in/${encodeURIComponent(cityRaw)}?format=j1`;
     const res = await fetch(url);
-
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
     const data = await res.json();
-
-    // Extract values from wttr.in response structure
     const current   = data.current_condition[0];
     const area      = data.nearest_area[0];
     const temp      = parseInt(current.temp_C, 10);
@@ -1540,14 +1648,10 @@ async function fetchWeather() {
     const feelsLike = parseInt(current.FeelsLikeC, 10);
     const desc      = current.weatherDesc[0].value;
     const windKph   = parseInt(current.windspeedKmph, 10);
-
-    // Build a readable location name
     const areaName    = area.areaName[0].value;
     const countryName = area.country[0].value;
     const displayCity = areaName ? `${areaName}, ${countryName}` : cityRaw;
-
     const weatherEmoji = getWeatherEmoji(desc);
-
     result.innerHTML = `
       <div class="weather-widget">
         <div style="font-size:6rem;line-height:1">${weatherEmoji}</div>
@@ -1559,13 +1663,11 @@ async function fetchWeather() {
           </div>
         </div>
       </div>`;
-
     tipsGrid.innerHTML = getWeatherTips(temp, humidity).map(t => `
       <div class="weather-tip">
         <div class="tip-icon">${t.icon}</div>
         <div><h5>${t.title}</h5><p>${t.text}</p></div>
       </div>`).join('');
-
   } catch(e) {
     result.innerHTML = `
       <div style="background:rgba(201,133,106,0.1);border:1px solid rgba(201,133,106,0.25);border-radius:var(--radius);padding:24px 28px;">
@@ -1579,15 +1681,15 @@ async function fetchWeather() {
 
 function getWeatherEmoji(desc) {
   const d = desc.toLowerCase();
-  if (d.includes('sunny') || d.includes('clear'))          return '☀️';
-  if (d.includes('partly cloudy') || d.includes('overcast')) return '⛅';
-  if (d.includes('cloud'))                                   return '☁️';
-  if (d.includes('thunder') || d.includes('storm'))         return '⛈️';
-  if (d.includes('drizzle') || d.includes('light rain'))    return '🌦️';
-  if (d.includes('rain') || d.includes('shower'))           return '🌧️';
-  if (d.includes('snow') || d.includes('blizzard'))         return '❄️';
+  if (d.includes('sunny') || d.includes('clear'))             return '☀️';
+  if (d.includes('partly cloudy') || d.includes('overcast'))  return '⛅';
+  if (d.includes('cloud'))                                     return '☁️';
+  if (d.includes('thunder') || d.includes('storm'))           return '⛈️';
+  if (d.includes('drizzle') || d.includes('light rain'))      return '🌦️';
+  if (d.includes('rain') || d.includes('shower'))             return '🌧️';
+  if (d.includes('snow') || d.includes('blizzard'))           return '❄️';
   if (d.includes('mist') || d.includes('fog') || d.includes('haze')) return '🌫️';
-  if (d.includes('wind'))                                    return '💨';
+  if (d.includes('wind'))                                      return '💨';
   return '🌡️';
 }
 
@@ -1668,15 +1770,15 @@ function renderVideos() {
 // ===== AUTH =====
 function showAuthMsg(id, type, msg) {
   const el = document.getElementById(id);
-  el.className = 'auth-msg '+type;
+  el.className = 'auth-msg ' + type;
   el.textContent = msg;
 }
 
 function handleSignIn() {
   const email = document.getElementById('siEmail').value;
-  const pass = document.getElementById('siPass').value;
+  const pass  = document.getElementById('siPass').value;
   if (!email || !pass) { showAuthMsg('signinMsg','error','Please fill in all fields.'); return; }
-  if (!window._fbFns) { showAuthMsg('signinMsg','error','Firebase not configured.'); return; }
+  if (!window._fbFns)  { showAuthMsg('signinMsg','error','Firebase not configured.');   return; }
   window._fbFns.signIn(email, pass)
     .then(() => { showPage('home'); })
     .catch(e => showAuthMsg('signinMsg','error', e.message.replace('Firebase: ','')));
@@ -1684,11 +1786,14 @@ function handleSignIn() {
 
 function handleSignUp() {
   const email = document.getElementById('suEmail').value;
-  const pass = document.getElementById('suPass').value;
+  const pass  = document.getElementById('suPass').value;
   if (!email || !pass) { showAuthMsg('signupMsg','error','Please fill in all fields.'); return; }
-  if (!window._fbFns) { showAuthMsg('signupMsg','error','Firebase not configured.'); return; }
+  if (!window._fbFns)  { showAuthMsg('signupMsg','error','Firebase not configured.');   return; }
   window._fbFns.signUp(email, pass)
-    .then(() => { showAuthMsg('signupMsg','success','Account created! Welcome to Glow & Go.'); setTimeout(()=>showPage('home'),1500); })
+    .then(() => {
+      showAuthMsg('signupMsg','success','Account created! Welcome to Glow & Go.');
+      setTimeout(() => showPage('home'), 1500);
+    })
     .catch(e => showAuthMsg('signupMsg','error', e.message.replace('Firebase: ','')));
 }
 
@@ -1711,7 +1816,7 @@ function handleForgotPassword() {
 // ===== SCROLL REVEAL =====
 function initReveal() {
   const observer = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
   }, { threshold: 0.1 });
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 }
