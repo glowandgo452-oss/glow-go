@@ -10,51 +10,130 @@
 <!-- Firebase -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-           sendPasswordResetEmail, signOut, onAuthStateChanged,
-           GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import {
+    getAuth,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    sendPasswordResetEmail,
+    signOut,
+    onAuthStateChanged,
+    GoogleAuthProvider,
+    signInWithPopup,
+    setPersistence,
+    browserLocalPersistence
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import {
+    getFirestore,
+    doc,
+    setDoc,
+    getDoc,
+    onSnapshot
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+  // ── NEW Firebase config ──
   const firebaseConfig = {
-    apiKey: "AIzaSyAERQ_mPeh7TFLox5ksBEXQrwVeSOp70hc",
-    authDomain: "glowandgo-8c491.firebaseapp.com",
-    projectId: "glowandgo-8c491",
-    storageBucket: "glowandgo-8c491.firebasestorage.app",
-    messagingSenderId: "231824360995",
-    appId: "1:231824360995:web:bf73cfd3cd55fd048dd396",
-    measurementId: "G-S91GF3EF07"
+    apiKey: "AIzaSyD1AUqXqAbJs6nY4dF9xxTJRnrPPqjNOE0",
+    authDomain: "goandglow-e48ea.firebaseapp.com",
+    projectId: "goandglow-e48ea",
+    storageBucket: "goandglow-e48ea.firebasestorage.app",
+    messagingSenderId: "751043560434",
+    appId: "1:751043560434:web:b03135346d61da24ea616b",
+    measurementId: "G-LRTPVVVVZB"
   };
 
-  const app = initializeApp(firebaseConfig);
+  const app  = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  const db   = getFirestore(app);
   const googleProvider = new GoogleAuthProvider();
 
-  window._auth = auth;
+  // ── Set persistence to LOCAL so the user stays logged in across browser sessions ──
+  setPersistence(auth, browserLocalPersistence).catch(console.error);
+
+  // ── Expose globals ──
+  window._auth           = auth;
+  window._db             = db;
   window._googleProvider = googleProvider;
-  window._fbFns = {
-    signUp: (e,p) => createUserWithEmailAndPassword(auth,e,p),
-    signIn: (e,p) => signInWithEmailAndPassword(auth,e,p),
-    resetPwd: (e) => sendPasswordResetEmail(auth,e),
-    signOut: () => signOut(auth),
-    googleSignIn: () => signInWithPopup(auth, googleProvider),
-    onAuth: (cb) => onAuthStateChanged(auth, cb)
+
+  // ── Firestore helpers ──
+  window._firestoreFns = {
+    // Save tracker state for current user
+    saveTracker: async (uid, trackerState) => {
+      try {
+        await setDoc(doc(db, 'users', uid, 'data', 'tracker'), { state: trackerState }, { merge: true });
+      } catch(e) { console.error('Firestore saveTracker:', e); }
+    },
+    // Save streak data for current user
+    saveStreak: async (uid, streakData) => {
+      try {
+        await setDoc(doc(db, 'users', uid, 'data', 'streak'), streakData, { merge: true });
+      } catch(e) { console.error('Firestore saveStreak:', e); }
+    },
+    // Load tracker state
+    loadTracker: async (uid) => {
+      try {
+        const snap = await getDoc(doc(db, 'users', uid, 'data', 'tracker'));
+        return snap.exists() ? (snap.data().state || {}) : {};
+      } catch(e) { console.error('Firestore loadTracker:', e); return {}; }
+    },
+    // Load streak data
+    loadStreak: async (uid) => {
+      try {
+        const snap = await getDoc(doc(db, 'users', uid, 'data', 'streak'));
+        return snap.exists() ? snap.data() : { days: [], count: 0 };
+      } catch(e) { console.error('Firestore loadStreak:', e); return { days: [], count: 0 }; }
+    }
   };
 
-  window._fbFns.onAuth(user => {
+  window._fbFns = {
+    signUp:       (e, p) => createUserWithEmailAndPassword(auth, e, p),
+    signIn:       (e, p) => signInWithEmailAndPassword(auth, e, p),
+    resetPwd:     (e)    => sendPasswordResetEmail(auth, e),
+    signOut:      ()     => signOut(auth),
+    googleSignIn: ()     => signInWithPopup(auth, googleProvider),
+    onAuth:       (cb)   => onAuthStateChanged(auth, cb)
+  };
+
+  // ── Auth state listener ──
+  window._fbFns.onAuth(async user => {
     const bar = document.getElementById('authBar');
     if (!bar) return;
 
     if (user) {
-      /* ── Grant access ── */
+      // Grant access
       document.body.classList.add('user-authenticated');
+      window._currentUID = user.uid;
+
       bar.innerHTML = `
-        <span style="color:#c9856a;font-size:.85rem">👤 ${user.email || user.displayName}</span>
+        <span style="color:var(--terracotta);font-size:.85rem">👤 ${user.displayName || user.email}</span>
         <button class="nav-btn" onclick="window._fbFns.signOut()">Logout</button>`;
+
+      // ── Load Firestore data into in-memory state ──
+      if (window._firestoreFns) {
+        const [trackerFromDB, streakFromDB] = await Promise.all([
+          window._firestoreFns.loadTracker(user.uid),
+          window._firestoreFns.loadStreak(user.uid)
+        ]);
+        // Merge with localStorage fallback (Firestore wins)
+        window.trackerState = Object.keys(trackerFromDB).length ? trackerFromDB
+          : JSON.parse(localStorage.getItem('gg_tracker') || '{}');
+        window.streakData = (streakFromDB && streakFromDB.days)
+          ? streakFromDB
+          : JSON.parse(localStorage.getItem('gg_streak') || '{"days":[],"count":0}');
+
+        // Re-render tracker if already on that page
+        const activePage = document.querySelector('.page.active');
+        if (activePage && activePage.id === 'page-tracker') {
+          renderTracker();
+        }
+      }
+
     } else {
-      /* ── Revoke access ── */
+      // Revoke access
       document.body.classList.remove('user-authenticated');
+      window._currentUID = null;
       bar.innerHTML = `<button class="nav-btn" onclick="showPage('signin')">Sign In</button>`;
 
-      /* If currently on a protected page, bounce to home */
+      // If currently on a protected page, bounce to home
       const activePage = document.querySelector('.page.active');
       if (activePage) {
         const activeId = activePage.id.replace('page-', '');
@@ -139,7 +218,6 @@ nav {
 .page.active { display: block; }
 
 /* ===== AUTH GATE ===== */
-/* Protected content pages – hidden when not authenticated */
 body:not(.user-authenticated) #page-skintypes,
 body:not(.user-authenticated) #page-skindetail,
 body:not(.user-authenticated) #page-products,
@@ -152,65 +230,45 @@ body:not(.user-authenticated) #page-weather {
   display: none !important;
 }
 
-/* Hide protected nav links when not authenticated */
 body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   display: none !important;
 }
 
 /* ===== TOAST ===== */
 .auth-toast {
-  position: fixed;
-  bottom: 28px;
-  left: 50%;
+  position: fixed; bottom: 28px; left: 50%;
   transform: translateX(-50%) translateY(80px);
-  background: var(--text);
-  color: #fff;
-  padding: 14px 26px;
-  border-radius: 50px;
-  font-size: .88rem;
-  font-weight: 500;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  background: var(--text); color: #fff;
+  padding: 14px 26px; border-radius: 50px;
+  font-size: .88rem; font-weight: 500;
+  z-index: 9999; display: flex; align-items: center; gap: 10px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.22);
   transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s ease;
-  opacity: 0;
-  pointer-events: none;
-  white-space: nowrap;
+  opacity: 0; pointer-events: none; white-space: nowrap;
 }
-.auth-toast.show {
-  transform: translateX(-50%) translateY(0);
-  opacity: 1;
-}
+.auth-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 .auth-toast .toast-icon { font-size: 1rem; flex-shrink: 0; }
 .auth-toast .toast-action {
-  background: var(--terracotta);
-  border: none; color: #fff;
+  background: var(--terracotta); border: none; color: #fff;
   padding: 5px 14px; border-radius: 30px;
-  font-size: .8rem; font-weight: 600;
-  cursor: pointer; font-family: var(--ff-body);
-  pointer-events: all; margin-left: 4px;
+  font-size: .8rem; font-weight: 600; cursor: pointer;
+  font-family: var(--ff-body); pointer-events: all; margin-left: 4px;
 }
 
 /* ===== HERO ===== */
 .hero {
-  min-height: 92vh;
-  display: flex; align-items: center;
+  min-height: 92vh; display: flex; align-items: center;
   background: linear-gradient(135deg, var(--cream) 0%, var(--blush) 60%, #ecd5c5 100%);
-  position: relative; overflow: hidden;
-  padding: 80px 5vw 60px;
+  position: relative; overflow: hidden; padding: 80px 5vw 60px;
 }
 .hero::before {
-  content: '';
-  position: absolute; top: -120px; right: -120px;
+  content: ''; position: absolute; top: -120px; right: -120px;
   width: 550px; height: 550px;
   background: radial-gradient(circle, rgba(232,196,176,0.55) 0%, transparent 70%);
   border-radius: 50%;
 }
 .hero::after {
-  content: '';
-  position: absolute; bottom: -80px; left: -80px;
+  content: ''; position: absolute; bottom: -80px; left: -80px;
   width: 380px; height: 380px;
   background: radial-gradient(circle, rgba(181,196,177,0.4) 0%, transparent 70%);
   border-radius: 50%;
@@ -225,25 +283,21 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   animation: fadeUp .6s ease both;
 }
 .hero h1 {
-  font-family: var(--ff-display);
-  font-size: clamp(3rem, 6vw, 5.5rem);
-  font-weight: 300; line-height: 1.1;
-  color: var(--text); margin-bottom: 22px;
+  font-family: var(--ff-display); font-size: clamp(3rem, 6vw, 5.5rem);
+  font-weight: 300; line-height: 1.1; color: var(--text); margin-bottom: 22px;
   animation: fadeUp .7s .1s ease both;
 }
 .hero h1 em { color: var(--terracotta); font-style: italic; }
 .hero p {
   font-size: 1.08rem; color: var(--text-light); line-height: 1.75;
-  margin-bottom: 36px; max-width: 470px;
-  animation: fadeUp .7s .2s ease both;
+  margin-bottom: 36px; max-width: 470px; animation: fadeUp .7s .2s ease both;
 }
 .hero-btns { display: flex; gap: 14px; flex-wrap: wrap; animation: fadeUp .7s .3s ease both; }
 .btn-primary {
   background: var(--terracotta); color: #fff;
   padding: 14px 32px; border-radius: 50px; border: none;
   font-family: var(--ff-body); font-size: .95rem; font-weight: 600;
-  cursor: pointer; transition: all .3s;
-  box-shadow: 0 6px 20px rgba(201,133,106,0.35);
+  cursor: pointer; transition: all .3s; box-shadow: 0 6px 20px rgba(201,133,106,0.35);
 }
 .btn-primary:hover { background: var(--clay); transform: translateY(-2px); box-shadow: 0 10px 30px rgba(201,133,106,0.4); }
 .btn-outline {
@@ -255,16 +309,14 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 .btn-outline:hover { background: var(--blush); border-color: var(--terracotta); transform: translateY(-2px); }
 .hero-visual {
   position: absolute; right: 5vw; top: 50%; transform: translateY(-50%);
-  display: flex; gap: 20px; z-index: 2;
-  animation: fadeUp .8s .4s ease both;
+  display: flex; gap: 20px; z-index: 2; animation: fadeUp .8s .4s ease both;
 }
 .hero-card {
   background: var(--card-bg); backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.8);
   border-radius: var(--radius); padding: 24px 20px;
-  text-align: center; width: 140px;
-  box-shadow: var(--shadow); cursor: pointer;
-  transition: all .3s;
+  text-align: center; width: 140px; box-shadow: var(--shadow);
+  cursor: pointer; transition: all .3s;
 }
 .hero-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-hover); }
 .hero-card .icon { font-size: 2rem; margin-bottom: 10px; }
@@ -275,8 +327,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 /* ===== STATS ===== */
 .stats {
   display: flex; justify-content: center; gap: 60px; flex-wrap: wrap;
-  padding: 48px 5vw;
-  border-bottom: 1px solid rgba(201,133,106,0.12);
+  padding: 48px 5vw; border-bottom: 1px solid rgba(201,133,106,0.12);
 }
 .stat { text-align: center; }
 .stat h3 { font-family: var(--ff-display); font-size: 2.5rem; font-weight: 600; color: var(--terracotta); }
@@ -309,8 +360,8 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   height: 200px; display: flex; align-items: center; justify-content: center;
   font-size: 5rem; position: relative; overflow: hidden;
 }
-.skin-card-img.oily { background: linear-gradient(135deg, #ffecd2, #fcb69f); }
-.skin-card-img.dry  { background: linear-gradient(135deg, #ffdde1, #ee9ca7); }
+.skin-card-img.oily  { background: linear-gradient(135deg, #ffecd2, #fcb69f); }
+.skin-card-img.dry   { background: linear-gradient(135deg, #ffdde1, #ee9ca7); }
 .skin-card-img.combo { background: linear-gradient(135deg, #d4efdf, #b5ead7); }
 .skin-card-body { padding: 26px; }
 .skin-tag {
@@ -318,23 +369,21 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
   margin-bottom: 12px;
 }
-.tag-oily { background: rgba(252,182,159,0.25); color: #d4633a; }
-.tag-dry  { background: rgba(238,156,167,0.25); color: #b84c67; }
-.tag-combo{ background: rgba(122,158,118,0.25); color: #4a7a46; }
+.tag-oily  { background: rgba(252,182,159,0.25); color: #d4633a; }
+.tag-dry   { background: rgba(238,156,167,0.25); color: #b84c67; }
+.tag-combo { background: rgba(122,158,118,0.25); color: #4a7a46; }
 .skin-card-body h3 { font-family: var(--ff-display); font-size: 1.6rem; font-weight: 400; margin-bottom: 10px; }
 .skin-card-body p  { font-size: .87rem; color: var(--text-light); line-height: 1.7; margin-bottom: 18px; }
 .link-btn {
   background: none; border: none; color: var(--terracotta);
   font-family: var(--ff-body); font-size: .88rem; font-weight: 600;
-  cursor: pointer; display: flex; align-items: center; gap: 6px;
-  transition: gap .25s;
+  cursor: pointer; display: flex; align-items: center; gap: 6px; transition: gap .25s;
 }
 .link-btn:hover { gap: 10px; }
 
 /* ===== SKIN DETAIL PAGE ===== */
 .skin-detail-hero {
-  padding: 60px 5vw 40px;
-  display: flex; gap: 40px; align-items: center; flex-wrap: wrap;
+  padding: 60px 5vw 40px; display: flex; gap: 40px; align-items: center; flex-wrap: wrap;
 }
 .skin-detail-icon {
   width: 140px; height: 140px; border-radius: 50%;
@@ -352,9 +401,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   font-family: var(--ff-body); font-size: .85rem; font-weight: 500;
   color: var(--text-light); background: none; cursor: pointer; transition: all .25s;
 }
-.detail-tab.active, .detail-tab:hover {
-  background: var(--terracotta); color: #fff; border-color: var(--terracotta);
-}
+.detail-tab.active, .detail-tab:hover { background: var(--terracotta); color: #fff; border-color: var(--terracotta); }
 .detail-panel { display: none; padding: 0 5vw 60px; }
 .detail-panel.active { display: block; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 22px; }
@@ -379,7 +426,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .routine-step h5 { font-size: .95rem; font-weight: 600; margin-bottom: 3px; }
-.routine-step p { font-size: .82rem; color: var(--text-light); }
+.routine-step p  { font-size: .82rem; color: var(--text-light); }
 
 /* ===== PRODUCTS ===== */
 .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 26px; }
@@ -427,16 +474,14 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 .product-detail-img {
   flex: 0 0 340px; height: 380px; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center;
-  font-size: 8rem;
-  background: linear-gradient(135deg, var(--blush), var(--rose));
+  font-size: 8rem; background: linear-gradient(135deg, var(--blush), var(--rose));
   box-shadow: var(--shadow);
 }
 .product-detail-info { flex: 1; min-width: 280px; }
 .product-detail-info .back-btn {
   background: none; border: none; color: var(--text-light);
   font-family: var(--ff-body); font-size: .85rem; cursor: pointer;
-  display: flex; align-items: center; gap: 6px; margin-bottom: 22px;
-  transition: color .2s;
+  display: flex; align-items: center; gap: 6px; margin-bottom: 22px; transition: color .2s;
 }
 .product-detail-info .back-btn:hover { color: var(--terracotta); }
 .product-detail-info h1 { font-family: var(--ff-display); font-size: 2.8rem; font-weight: 300; line-height: 1.1; }
@@ -450,8 +495,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   background: var(--terracotta); color: #fff;
   border: none; border-radius: 50px; padding: 16px 40px;
   font-family: var(--ff-body); font-size: 1rem; font-weight: 600;
-  cursor: pointer; transition: all .3s;
-  box-shadow: 0 6px 20px rgba(201,133,106,0.35);
+  cursor: pointer; transition: all .3s; box-shadow: 0 6px 20px rgba(201,133,106,0.35);
   display: inline-flex; align-items: center; gap: 10px;
 }
 .buy-now-btn:hover { background: var(--clay); transform: translateY(-2px); box-shadow: 0 10px 30px rgba(201,133,106,0.4); }
@@ -462,10 +506,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   background: var(--card-bg); border: 1px solid rgba(255,255,255,0.8);
   border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow);
 }
-.tracker-panel h3 {
-  font-family: var(--ff-display); font-size: 1.5rem; font-weight: 400;
-  margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
-}
+.tracker-panel h3 { font-family: var(--ff-display); font-size: 1.5rem; font-weight: 400; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
 .tracker-item {
   display: flex; align-items: center; gap: 14px;
   padding: 13px 16px; border-radius: 12px;
@@ -473,7 +514,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   transition: all .25s; cursor: pointer;
 }
 .tracker-item:hover { background: var(--blush); }
-.tracker-item.done { background: rgba(122,158,118,0.12); }
+.tracker-item.done  { background: rgba(122,158,118,0.12); }
 .tracker-cb {
   width: 24px; height: 24px; border-radius: 50%;
   border: 2px solid var(--rose); display: flex;
@@ -482,7 +523,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 }
 .tracker-item.done .tracker-cb { background: var(--sage-dark); border-color: var(--sage-dark); }
 .tracker-text h5 { font-size: .93rem; font-weight: 500; }
-.tracker-text p { font-size: .78rem; color: var(--text-light); }
+.tracker-text p  { font-size: .78rem; color: var(--text-light); }
 .streak-panel {
   grid-column: 1 / -1; background: linear-gradient(135deg, var(--terracotta), var(--clay));
   border-radius: var(--radius); padding: 28px; color: #fff;
@@ -495,8 +536,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 .streak-day {
   width: 36px; height: 36px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: .7rem; font-weight: 600;
-  background: rgba(255,255,255,0.2);
+  font-size: .7rem; font-weight: 600; background: rgba(255,255,255,0.2);
 }
 .streak-day.done { background: rgba(255,255,255,0.6); color: var(--clay); }
 
@@ -508,7 +548,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   box-shadow: var(--shadow); margin-bottom: 40px; color: #3a2e6e;
 }
 .weather-info h2 { font-family: var(--ff-display); font-size: 2rem; font-weight: 400; }
-.weather-info p { font-size: .9rem; opacity: .8; margin-top: 4px; }
+.weather-info p  { font-size: .9rem; opacity: .8; margin-top: 4px; }
 .weather-temp { font-family: var(--ff-display); font-size: 4rem; font-weight: 300; }
 .weather-tips-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
 .weather-tip {
@@ -518,7 +558,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 }
 .weather-tip .tip-icon { font-size: 1.8rem; flex-shrink: 0; }
 .weather-tip h5 { font-size: .92rem; font-weight: 600; margin-bottom: 5px; }
-.weather-tip p { font-size: .82rem; color: var(--text-light); line-height: 1.6; }
+.weather-tip p  { font-size: .82rem; color: var(--text-light); line-height: 1.6; }
 #weatherSection input[type=text] {
   padding: 12px 20px; border-radius: 30px;
   border: 1.5px solid var(--rose); font-family: var(--ff-body);
@@ -535,14 +575,11 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   box-shadow: var(--shadow); transition: all .35s; cursor: pointer;
 }
 .blog-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-hover); }
-.blog-img {
-  height: 210px; display: flex; align-items: center; justify-content: center;
-  font-size: 5rem;
-}
+.blog-img { height: 210px; display: flex; align-items: center; justify-content: center; font-size: 5rem; }
 .blog-body { padding: 22px; }
 .blog-meta { display: flex; gap: 12px; font-size: .75rem; color: var(--text-light); margin-bottom: 10px; }
 .blog-body h3 { font-family: var(--ff-display); font-size: 1.3rem; font-weight: 500; margin-bottom: 10px; line-height: 1.3; }
-.blog-body p { font-size: .85rem; color: var(--text-light); line-height: 1.7; }
+.blog-body p   { font-size: .85rem; color: var(--text-light); line-height: 1.7; }
 .read-more { color: var(--terracotta); font-weight: 600; font-size: .85rem; margin-top: 12px; display: inline-block; }
 
 /* ===== BLOG DETAIL PAGE ===== */
@@ -562,14 +599,9 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   font-weight: 300; line-height: 1.2; margin-bottom: 28px; color: var(--text);
 }
 .blog-detail-title em { color: var(--terracotta); font-style: italic; }
-.blog-detail-body {
-  font-size: 1rem; color: var(--text-light); line-height: 1.85;
-}
-.blog-detail-body p { margin-bottom: 20px; }
-.blog-detail-body h4 {
-  font-family: var(--ff-display); font-size: 1.5rem; font-weight: 500;
-  color: var(--text); margin: 32px 0 14px;
-}
+.blog-detail-body { font-size: 1rem; color: var(--text-light); line-height: 1.85; }
+.blog-detail-body p  { margin-bottom: 20px; }
+.blog-detail-body h4 { font-family: var(--ff-display); font-size: 1.5rem; font-weight: 500; color: var(--text); margin: 32px 0 14px; }
 .blog-detail-body ul { margin: 0 0 20px 20px; }
 .blog-detail-body ul li { padding: 5px 0; }
 .blog-detail-body blockquote {
@@ -577,12 +609,6 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   background: var(--blush); border-radius: 0 12px 12px 0;
   font-family: var(--ff-display); font-size: 1.2rem; font-style: italic;
   color: var(--clay); margin: 24px 0;
-}
-.blog-tag-pill {
-  display: inline-block; padding: 5px 14px; border-radius: 30px;
-  background: rgba(201,133,106,0.12); color: var(--terracotta);
-  font-size: .75rem; font-weight: 600; letter-spacing: .06em;
-  text-transform: uppercase; margin-bottom: 14px;
 }
 
 /* ===== VIDEOS ===== */
@@ -596,13 +622,12 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 .video-embed { width: 100%; aspect-ratio: 16/9; border: none; }
 .video-card-body { padding: 16px 20px; }
 .video-card-body h4 { font-family: var(--ff-display); font-size: 1.05rem; font-weight: 500; margin-bottom: 5px; }
-.video-card-body p { font-size: .8rem; color: var(--text-light); }
+.video-card-body p  { font-size: .8rem; color: var(--text-light); }
 
 /* ===== AUTH PAGES ===== */
 .auth-page {
   min-height: 90vh; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, var(--cream), var(--blush));
-  padding: 40px 20px;
+  background: linear-gradient(135deg, var(--cream), var(--blush)); padding: 40px 20px;
 }
 .auth-card {
   background: #fff; border-radius: 24px;
@@ -639,13 +664,16 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 .auth-divider span { font-size: .78rem; color: var(--text-light); }
 .auth-switch { text-align: center; margin-top: 22px; font-size: .85rem; color: var(--text-light); }
 .auth-switch a { color: var(--terracotta); cursor: pointer; font-weight: 600; text-decoration: none; }
-.auth-msg {
-  padding: 12px 16px; border-radius: 10px; font-size: .85rem;
-  margin-bottom: 16px; display: none;
-}
+.auth-msg { padding: 12px 16px; border-radius: 10px; font-size: .85rem; margin-bottom: 16px; display: none; }
 .auth-msg.success { background: rgba(122,158,118,0.15); color: #4a7a46; display: block; }
 .auth-msg.error   { background: rgba(201,133,106,0.15); color: var(--clay); display: block; }
 .forgot-link { background: none; border: none; color: var(--terracotta); font-size: .82rem; font-family: var(--ff-body); cursor: pointer; margin-top: 8px; }
+
+/* ===== SYNC STATUS ===== */
+.sync-badge {
+  font-size: .72rem; color: var(--sage-dark); background: rgba(122,158,118,0.12);
+  padding: 4px 10px; border-radius: 30px; display: inline-flex; align-items: center; gap: 5px;
+}
 
 /* ===== FOOTER ===== */
 footer {
@@ -712,14 +740,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
   display: flex; align-items: center; gap: 6px; transition: color .2s;
 }
 .back-bar button:hover { color: var(--terracotta); }
-.page-loading {
-  text-align: center; padding: 80px 20px; font-family: var(--ff-display);
-  font-size: 1.5rem; color: var(--text-light); font-style: italic;
-}
-.tab-content-header {
-  font-family: var(--ff-display); font-size: 1.8rem; font-weight: 400;
-  margin-bottom: 24px; color: var(--text);
-}
+.tab-content-header { font-family: var(--ff-display); font-size: 1.8rem; font-weight: 400; margin-bottom: 24px; color: var(--text); }
 </style>
 </head>
 <body>
@@ -731,7 +752,6 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
     <i class="fas fa-bars"></i>
   </button>
   <div class="nav-links" id="navLinks">
-    <!-- nav-link-home class keeps this visible for unauthenticated users -->
     <button class="nav-link nav-link-home" onclick="showPage('home')">Home</button>
     <button class="nav-link" onclick="showPage('skintypes')">Skin Types</button>
     <button class="nav-link" onclick="showPage('products')">Products</button>
@@ -753,7 +773,6 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
       <h1>Glow <em>Naturally,</em><br>Go Confidently</h1>
       <p>Your personalized skincare companion. Discover routines tailored to your skin type, track daily habits, and connect with expert knowledge.</p>
       <div class="hero-btns">
-        <!-- These now go through the auth-gated showPage(), so no extra onclick changes needed -->
         <button class="btn-primary" onclick="showPage('skintypes')">Find Your Skin Type</button>
         <button class="btn-outline" onclick="showPage('tracker')">Start Tracking</button>
       </div>
@@ -939,7 +958,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
     <div class="section-header">
       <div class="eyebrow">Daily Habits</div>
       <h2>Skincare <em>Routine</em> Tracker</h2>
-      <p>Mark off your daily skincare steps and build a consistent habit. Track your streaks over time.</p>
+      <p>Mark off your daily skincare steps and build a consistent habit. Your progress syncs automatically to the cloud.</p>
     </div>
     <div class="tracker-layout">
       <div class="tracker-panel">
@@ -1028,7 +1047,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="siPass" placeholder="••••••••"/>
+        <input type="password" id="siPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleSignIn()"/>
       </div>
       <button class="auth-btn" onclick="handleSignIn()">Sign In</button>
       <button class="forgot-link" onclick="showPage('forgot')">Forgot password?</button>
@@ -1055,7 +1074,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="suPass" placeholder="Minimum 6 characters"/>
+        <input type="password" id="suPass" placeholder="Minimum 6 characters" onkeydown="if(event.key==='Enter')handleSignUp()"/>
       </div>
       <button class="auth-btn" onclick="handleSignUp()">Create Account</button>
       <div class="auth-divider"><hr/><span>or</span><hr/></div>
@@ -1077,7 +1096,7 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
       <div class="auth-msg" id="forgotMsg"></div>
       <div class="form-group">
         <label>Email Address</label>
-        <input type="email" id="fpEmail" placeholder="you@example.com"/>
+        <input type="email" id="fpEmail" placeholder="you@example.com" onkeydown="if(event.key==='Enter')handleForgotPassword()"/>
       </div>
       <button class="auth-btn" onclick="handleForgotPassword()">Send Reset Link</button>
       <div class="auth-switch" style="margin-top:16px"><a onclick="showPage('signin')"><i class="fas fa-arrow-left"></i> Back to Sign In</a></div>
@@ -1133,12 +1152,10 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
 
 <script>
 // ===== AUTH GATE SETS =====
-// Pages that require a logged-in user
 const PROTECTED_PAGES = new Set([
   'skintypes', 'skindetail', 'products', 'productdetail',
   'blog', 'blogdetail', 'videos', 'tracker', 'weather'
 ]);
-// Pages always accessible (auth pages + home)
 const PUBLIC_PAGES = new Set(['home', 'signin', 'signup', 'forgot']);
 
 function isAuthenticated() {
@@ -1220,169 +1237,46 @@ const products = [
 
 const blogPosts = [
   {
-    id: 0,
-    title: 'The Science of Sebum: Why Your Skin Gets Oily',
-    img: '🔬',
-    date: 'June 10, 2025',
-    category: 'Education',
+    id: 0, title: 'The Science of Sebum: Why Your Skin Gets Oily', img: '🔬',
+    date: 'June 10, 2025', category: 'Education',
     excerpt: 'Sebum is your skin\'s natural oil produced by sebaceous glands. While often seen as the enemy, it actually plays a vital role in protecting your skin barrier.',
     color: '#ffecd2',
-    fullContent: `
-      <p>Sebum is a waxy, oily substance produced by the sebaceous glands, which are microscopic glands found in almost every area of skin on the human body. While excess sebum is commonly associated with acne, oily skin, and clogged pores, it actually serves several critical biological functions.</p>
-      <h4>What Does Sebum Actually Do?</h4>
-      <p>Sebum forms a protective barrier on the skin's surface that helps prevent water loss, protects against environmental pollutants, and carries antioxidants like vitamin E to the surface. It also has mild antimicrobial properties, helping to keep harmful bacteria and fungi at bay.</p>
-      <blockquote>Your skin's natural oils are not your enemy — they are your first line of defence against the world.</blockquote>
-      <h4>Why Does Sebum Production Vary?</h4>
-      <p>Sebaceous glands are influenced by hormones — particularly androgens like testosterone — which is why sebum production surges during puberty and can fluctuate during menstrual cycles and pregnancy. Stress hormones (cortisol) can also spike sebum output, explaining why breakouts often appear during stressful periods.</p>
-      <ul>
-        <li>Genetics play the largest role in baseline sebum production</li>
-        <li>Diet, particularly high-glycaemic foods and dairy, can increase sebum</li>
-        <li>Hot, humid climates stimulate more sebum output</li>
-        <li>Over-cleansing strips sebum and triggers a rebound overproduction</li>
-      </ul>
-      <h4>Finding Balance: The Key to Healthy Skin</h4>
-      <p>The goal isn't to eliminate sebum — it's to maintain balance. Harsh, stripping cleansers that remove all surface oils actually backfire: the skin compensates by producing even more sebum. A gentle, non-drying cleanser combined with a lightweight, non-comedogenic moisturiser helps signal to the skin that it has enough oil and can slow production.</p>
-      <p>Ingredients like niacinamide (vitamin B3) are particularly effective at regulating sebum production without causing irritation, making them a cornerstone of any oily skin routine.</p>
-    `
+    fullContent: `<p>Sebum is a waxy, oily substance produced by the sebaceous glands, which are microscopic glands found in almost every area of skin on the human body. While excess sebum is commonly associated with acne, oily skin, and clogged pores, it actually serves several critical biological functions.</p><h4>What Does Sebum Actually Do?</h4><p>Sebum forms a protective barrier on the skin's surface that helps prevent water loss, protects against environmental pollutants, and carries antioxidants like vitamin E to the surface. It also has mild antimicrobial properties, helping to keep harmful bacteria and fungi at bay.</p><blockquote>Your skin's natural oils are not your enemy — they are your first line of defence against the world.</blockquote><h4>Why Does Sebum Production Vary?</h4><p>Sebaceous glands are influenced by hormones — particularly androgens like testosterone — which is why sebum production surges during puberty and can fluctuate during menstrual cycles and pregnancy. Stress hormones (cortisol) can also spike sebum output, explaining why breakouts often appear during stressful periods.</p><ul><li>Genetics play the largest role in baseline sebum production</li><li>Diet, particularly high-glycaemic foods and dairy, can increase sebum</li><li>Hot, humid climates stimulate more sebum output</li><li>Over-cleansing strips sebum and triggers a rebound overproduction</li></ul><h4>Finding Balance: The Key to Healthy Skin</h4><p>The goal isn't to eliminate sebum — it's to maintain balance. Harsh, stripping cleansers that remove all surface oils actually backfire: the skin compensates by producing even more sebum. A gentle, non-drying cleanser combined with a lightweight, non-comedogenic moisturiser helps signal to the skin that it has enough oil and can slow production.</p>`
   },
   {
-    id: 1,
-    title: 'Hyaluronic Acid: The Ultimate Hydration Guide',
-    img: '💧',
-    date: 'May 28, 2025',
-    category: 'Ingredients',
+    id: 1, title: 'Hyaluronic Acid: The Ultimate Hydration Guide', img: '💧',
+    date: 'May 28, 2025', category: 'Ingredients',
     excerpt: 'Hyaluronic acid can hold up to 1,000 times its weight in water, making it an exceptional humectant. Discover how to use it correctly.',
     color: '#ffdde1',
-    fullContent: `
-      <p>Hyaluronic acid (HA) is one of the most celebrated skincare ingredients of the last decade — and for good reason. It's a naturally occurring polysaccharide found in the skin, connective tissue, and eyes. Its primary function? Retaining water to keep tissues well-lubricated and moist.</p>
-      <h4>How Does It Work?</h4>
-      <p>As a humectant, hyaluronic acid attracts water molecules from the environment and the deeper layers of skin, drawing them to the surface. A single HA molecule can hold up to 1,000 times its own weight in water — which is why even a small amount has such a dramatic plumping and hydrating effect.</p>
-      <blockquote>Hyaluronic acid doesn't add moisture — it captures and holds the moisture already around you.</blockquote>
-      <h4>Types of Hyaluronic Acid</h4>
-      <ul>
-        <li><strong>High molecular weight HA</strong> — stays on the surface, creates a moisture barrier and smoothing effect</li>
-        <li><strong>Low molecular weight HA</strong> — penetrates deeper layers, providing internal hydration</li>
-        <li><strong>Sodium hyaluronate</strong> — the salt form, smaller molecule, excellent skin penetration</li>
-      </ul>
-      <h4>The Critical Application Rule</h4>
-      <p>This is where most people go wrong: hyaluronic acid must be applied to damp skin. If you apply it to dry skin in a dry environment, it will pull moisture from deeper skin layers instead of the air — actually dehydrating you further. Always spritz your face or apply HA immediately after washing, while skin is still slightly moist.</p>
-      <h4>Seal It In</h4>
-      <p>Hyaluronic acid alone evaporates. Always layer a moisturiser on top to create an occlusive seal that traps the hydration HA brings to the surface. For very dry skin, follow up with a facial oil for an extra barrier layer.</p>
-    `
+    fullContent: `<p>Hyaluronic acid (HA) is one of the most celebrated skincare ingredients of the last decade — and for good reason. It's a naturally occurring polysaccharide found in the skin, connective tissue, and eyes. Its primary function? Retaining water to keep tissues well-lubricated and moist.</p><h4>How Does It Work?</h4><p>As a humectant, hyaluronic acid attracts water molecules from the environment and the deeper layers of skin, drawing them to the surface. A single HA molecule can hold up to 1,000 times its own weight in water — which is why even a small amount has such a dramatic plumping and hydrating effect.</p><blockquote>Hyaluronic acid doesn't add moisture — it captures and holds the moisture already around you.</blockquote><h4>Types of Hyaluronic Acid</h4><ul><li><strong>High molecular weight HA</strong> — stays on the surface, creates a moisture barrier and smoothing effect</li><li><strong>Low molecular weight HA</strong> — penetrates deeper layers, providing internal hydration</li><li><strong>Sodium hyaluronate</strong> — the salt form, smaller molecule, excellent skin penetration</li></ul><h4>The Critical Application Rule</h4><p>This is where most people go wrong: hyaluronic acid must be applied to damp skin. If you apply it to dry skin in a dry environment, it will pull moisture from deeper skin layers instead of the air — actually dehydrating you further. Always spritz your face or apply HA immediately after washing, while skin is still slightly moist.</p><h4>Seal It In</h4><p>Hyaluronic acid alone evaporates. Always layer a moisturiser on top to create an occlusive seal that traps the hydration HA brings to the surface. For very dry skin, follow up with a facial oil for an extra barrier layer.</p>`
   },
   {
-    id: 2,
-    title: 'How to Build a Minimal Skincare Routine',
-    img: '✨',
-    date: 'May 15, 2025',
-    category: 'Routines',
+    id: 2, title: 'How to Build a Minimal Skincare Routine', img: '✨',
+    date: 'May 15, 2025', category: 'Routines',
     excerpt: 'Less is often more in skincare. A cleanser, moisturizer, and sunscreen can be all you need for healthy skin.',
     color: '#d4efdf',
-    fullContent: `
-      <p>The skincare industry generates billions of dollars annually by convincing us that we need dozens of products. But dermatologists agree: a minimal, consistent routine often outperforms an elaborate 12-step process that never gets followed properly.</p>
-      <h4>The Non-Negotiable Three</h4>
-      <ul>
-        <li><strong>Cleanser</strong> — Removes pollution, excess sebum, and SPF from the day</li>
-        <li><strong>Moisturiser</strong> — Strengthens the barrier, prevents water loss, and keeps skin supple</li>
-        <li><strong>Sunscreen (AM)</strong> — Protects against UV damage, the leading cause of premature ageing</li>
-      </ul>
-      <blockquote>A routine you actually follow every day beats a perfect routine you skip half the time.</blockquote>
-      <h4>When to Add More</h4>
-      <p>Once your skin is stable on the basics — meaning no irritation, consistent texture, manageable oiliness or dryness — you can consider adding actives. The order of introduction matters: add one new product at a time, wait two weeks, then assess.</p>
-      <h4>The Layering Order</h4>
-      <p>When you do expand beyond three steps, the universal rule is thinnest to thickest: cleanser → toner → serum → moisturiser → SPF (morning) or oil (night). Never put a heavy cream before a serum or the serum won't penetrate.</p>
-      <h4>Common Minimal Routine Mistakes</h4>
-      <ul>
-        <li>Skipping moisturiser because skin feels oily — this backfires and increases oil</li>
-        <li>Using a physical scrub daily — over-exfoliation destroys the skin barrier</li>
-        <li>Applying SPF only on sunny days — UV-A rays penetrate clouds and glass year-round</li>
-      </ul>
-    `
+    fullContent: `<p>The skincare industry generates billions of dollars annually by convincing us that we need dozens of products. But dermatologists agree: a minimal, consistent routine often outperforms an elaborate 12-step process that never gets followed properly.</p><h4>The Non-Negotiable Three</h4><ul><li><strong>Cleanser</strong> — Removes pollution, excess sebum, and SPF from the day</li><li><strong>Moisturiser</strong> — Strengthens the barrier, prevents water loss, and keeps skin supple</li><li><strong>Sunscreen (AM)</strong> — Protects against UV damage, the leading cause of premature ageing</li></ul><blockquote>A routine you actually follow every day beats a perfect routine you skip half the time.</blockquote><h4>When to Add More</h4><p>Once your skin is stable on the basics — meaning no irritation, consistent texture, manageable oiliness or dryness — you can consider adding actives. The order of introduction matters: add one new product at a time, wait two weeks, then assess.</p><h4>The Layering Order</h4><p>When you do expand beyond three steps, the universal rule is thinnest to thickest: cleanser → toner → serum → moisturiser → SPF (morning) or oil (night). Never put a heavy cream before a serum or the serum won't penetrate.</p><h4>Common Minimal Routine Mistakes</h4><ul><li>Skipping moisturiser because skin feels oily — this backfires and increases oil</li><li>Using a physical scrub daily — over-exfoliation destroys the skin barrier</li><li>Applying SPF only on sunny days — UV-A rays penetrate clouds and glass year-round</li></ul>`
   },
   {
-    id: 3,
-    title: 'SPF Every Day: Why Sun Protection is Non-Negotiable',
-    img: '☀️',
-    date: 'May 2, 2025',
-    category: 'Sun Care',
+    id: 3, title: 'SPF Every Day: Why Sun Protection is Non-Negotiable', img: '☀️',
+    date: 'May 2, 2025', category: 'Sun Care',
     excerpt: 'UV exposure is responsible for up to 90% of visible skin aging. Daily SPF 30+ application is the single most impactful anti-aging step you can take.',
     color: '#e8f4fd',
-    fullContent: `
-      <p>If you could only add one product to your skincare routine, dermatologists worldwide agree it should be sunscreen. UV radiation is responsible for approximately 80–90% of visible skin ageing — far more than any other environmental factor.</p>
-      <h4>UV-A vs UV-B: Know the Difference</h4>
-      <ul>
-        <li><strong>UV-B rays</strong> cause sunburn and are strongest in summer between 10am–4pm</li>
-        <li><strong>UV-A rays</strong> penetrate deeper, cause DNA damage and premature ageing, and are constant year-round — even through clouds and window glass</li>
-      </ul>
-      <p>This is why "broad-spectrum" SPF is essential — it protects against both UV-A and UV-B radiation.</p>
-      <blockquote>Sunscreen isn't just an anti-ageing product. It's the most evidence-backed skin health tool in existence.</blockquote>
-      <h4>How Much SPF Do You Actually Need?</h4>
-      <p>SPF 30 blocks approximately 97% of UV-B radiation. SPF 50 blocks about 98%. The difference is marginal, but consistent daily application and reapplication matter far more than the SPF number. Most people apply only 20–50% of the recommended amount, significantly reducing effectiveness.</p>
-      <h4>Applying SPF Correctly</h4>
-      <ul>
-        <li>Use a full teaspoon (about 1/4 tsp for face alone) for proper coverage</li>
-        <li>Apply 15–20 minutes before sun exposure</li>
-        <li>Reapply every 2 hours when outdoors</li>
-        <li>Don't forget the neck, ears, and back of hands</li>
-      </ul>
-      <h4>Choosing the Right Sunscreen for Your Skin</h4>
-      <p>Oily skin types do best with gel or fluid mineral sunscreens with a matte finish. Dry skin benefits from creamy, hydrating formulas. For combination skin, a lightweight fluid SPF that controls the T-zone without drying the cheeks works best.</p>
-    `
+    fullContent: `<p>If you could only add one product to your skincare routine, dermatologists worldwide agree it should be sunscreen. UV radiation is responsible for approximately 80–90% of visible skin ageing — far more than any other environmental factor.</p><h4>UV-A vs UV-B: Know the Difference</h4><ul><li><strong>UV-B rays</strong> cause sunburn and are strongest in summer between 10am–4pm</li><li><strong>UV-A rays</strong> penetrate deeper, cause DNA damage and premature ageing, and are constant year-round — even through clouds and window glass</li></ul><p>This is why "broad-spectrum" SPF is essential — it protects against both UV-A and UV-B radiation.</p><blockquote>Sunscreen isn't just an anti-ageing product. It's the most evidence-backed skin health tool in existence.</blockquote><h4>How Much SPF Do You Actually Need?</h4><p>SPF 30 blocks approximately 97% of UV-B radiation. SPF 50 blocks about 98%. The difference is marginal, but consistent daily application and reapplication matter far more than the SPF number. Most people apply only 20–50% of the recommended amount, significantly reducing effectiveness.</p><h4>Applying SPF Correctly</h4><ul><li>Use a full teaspoon (about 1/4 tsp for face alone) for proper coverage</li><li>Apply 15–20 minutes before sun exposure</li><li>Reapply every 2 hours when outdoors</li><li>Don't forget the neck, ears, and back of hands</li></ul>`
   },
   {
-    id: 4,
-    title: 'Retinol for Beginners: What You Need to Know',
-    img: '🌙',
-    date: 'Apr 20, 2025',
-    category: 'Anti-Aging',
+    id: 4, title: 'Retinol for Beginners: What You Need to Know', img: '🌙',
+    date: 'Apr 20, 2025', category: 'Anti-Aging',
     excerpt: 'Retinol is one of the most well-researched skincare ingredients for reducing fine lines and improving texture. Starting low and slow is essential.',
     color: '#fef9e7',
-    fullContent: `
-      <p>Retinol is a derivative of vitamin A and one of the most extensively studied skincare ingredients in existence. Decades of clinical research support its effectiveness for reducing fine lines, improving skin texture, stimulating collagen production, and treating acne. But it comes with a learning curve.</p>
-      <h4>How Retinol Works</h4>
-      <p>Once absorbed, retinol is converted into retinoic acid — the biologically active form. Retinoic acid binds to retinoid receptors in skin cells, accelerating cell turnover and stimulating new collagen production. This is what delivers its anti-ageing and skin-clearing effects.</p>
-      <h4>The Retinisation Period</h4>
-      <p>Nearly every first-time retinol user experiences a period of adjustment — often called "retinisation" — characterised by dryness, flaking, redness, and even a temporary breakout (the "purge"). This is normal and typically resolves within 4–6 weeks as the skin adapts.</p>
-      <blockquote>Retinol is a long game. The results at month three are completely different from week one.</blockquote>
-      <h4>How to Start Without Ruining Your Skin</h4>
-      <ul>
-        <li>Start with 0.025%–0.05% concentration, not higher</li>
-        <li>Use only twice a week initially, then increase slowly</li>
-        <li>Apply only at night — retinol degrades in UV light</li>
-        <li>Always follow with moisturiser to buffer irritation</li>
-        <li>Never combine with AHA/BHA exfoliants on the same night</li>
-        <li>Avoid during pregnancy — consult your doctor</li>
-      </ul>
-      <h4>Retinol vs Retinoids: What's the Difference?</h4>
-      <p>"Retinoids" is the umbrella term for all vitamin A derivatives. Retinol (over-the-counter) is milder but effective. Tretinoin (prescription-only) is stronger and works faster, but with more side effects. For most beginners, starting OTC is the right approach.</p>
-    `
+    fullContent: `<p>Retinol is a derivative of vitamin A and one of the most extensively studied skincare ingredients in existence. Decades of clinical research support its effectiveness for reducing fine lines, improving skin texture, stimulating collagen production, and treating acne. But it comes with a learning curve.</p><h4>How Retinol Works</h4><p>Once absorbed, retinol is converted into retinoic acid — the biologically active form. Retinoic acid binds to retinoid receptors in skin cells, accelerating cell turnover and stimulating new collagen production. This is what delivers its anti-ageing and skin-clearing effects.</p><h4>The Retinisation Period</h4><p>Nearly every first-time retinol user experiences a period of adjustment — often called "retinisation" — characterised by dryness, flaking, redness, and even a temporary breakout (the "purge"). This is normal and typically resolves within 4–6 weeks as the skin adapts.</p><blockquote>Retinol is a long game. The results at month three are completely different from week one.</blockquote><h4>How to Start Without Ruining Your Skin</h4><ul><li>Start with 0.025%–0.05% concentration, not higher</li><li>Use only twice a week initially, then increase slowly</li><li>Apply only at night — retinol degrades in UV light</li><li>Always follow with moisturiser to buffer irritation</li><li>Never combine with AHA/BHA exfoliants on the same night</li><li>Avoid during pregnancy — consult your doctor</li></ul><h4>Retinol vs Retinoids: What's the Difference?</h4><p>"Retinoids" is the umbrella term for all vitamin A derivatives. Retinol (over-the-counter) is milder but effective. Tretinoin (prescription-only) is stronger and works faster, but with more side effects. For most beginners, starting OTC is the right approach.</p>`
   },
   {
-    id: 5,
-    title: 'Combination Skin: The Guide to Multi-Zoning',
-    img: '🗺️',
-    date: 'Apr 8, 2025',
-    category: 'Skin Types',
+    id: 5, title: 'Combination Skin: The Guide to Multi-Zoning', img: '🗺️',
+    date: 'Apr 8, 2025', category: 'Skin Types',
     excerpt: 'Managing combination skin effectively means recognizing that different facial zones have different needs. Multi-masking helps you address oiliness and dryness simultaneously.',
     color: '#fce4ec',
-    fullContent: `
-      <p>Combination skin is the most common skin type globally — yet it's also the most misunderstood. Because it presents with both oily and dry zones on the same face, generic one-size-fits-all products frequently make one area better while worsening the other.</p>
-      <h4>Understanding Your Zones</h4>
-      <p>The classic combination skin pattern involves an oily T-zone (forehead, nose, and chin — where sebaceous glands are most dense) paired with normal-to-dry cheeks. However, every person's combination is unique: some have oily cheeks with a dry forehead, or dry patches that shift seasonally.</p>
-      <blockquote>Combination skin isn't a problem to be fixed — it's a map that tells you exactly what each area of your face needs.</blockquote>
-      <h4>The Multi-Zoning Approach</h4>
-      <p>Rather than applying the same product everywhere and hoping for the best, the multi-zoning method treats your face as distinct regions with individual needs. This might mean using a gentle gel cleanser across the whole face, but applying a clay mask only on the T-zone while using a hydrating mask on the cheeks simultaneously — a technique known as multi-masking.</p>
-      <h4>Building a Combination Skin Routine</h4>
-      <ul>
-        <li><strong>Cleanser:</strong> Gentle, balanced gel-cream — neither too foaming nor too rich</li>
-        <li><strong>Toner:</strong> Niacinamide works beautifully — it regulates oil AND supports the barrier</li>
-        <li><strong>Serum:</strong> Apply BHA to the T-zone, hyaluronic acid to the cheeks</li>
-        <li><strong>Moisturiser:</strong> Lightweight gel-lotion overall; add a richer cream to cheeks if needed</li>
-        <li><strong>SPF:</strong> A balanced fluid SPF that controls shine without drying</li>
-      </ul>
-      <h4>Seasonal Adjustments</h4>
-      <p>Combination skin often shifts with the seasons — becoming oilier in summer and drier in winter. Review your routine every three months and adjust product richness accordingly rather than sticking rigidly to the same formula year-round.</p>
-    `
+    fullContent: `<p>Combination skin is the most common skin type globally — yet it's also the most misunderstood. Because it presents with both oily and dry zones on the same face, generic one-size-fits-all products frequently make one area better while worsening the other.</p><h4>Understanding Your Zones</h4><p>The classic combination skin pattern involves an oily T-zone (forehead, nose, and chin — where sebaceous glands are most dense) paired with normal-to-dry cheeks. However, every person's combination is unique: some have oily cheeks with a dry forehead, or dry patches that shift seasonally.</p><blockquote>Combination skin isn't a problem to be fixed — it's a map that tells you exactly what each area of your face needs.</blockquote><h4>The Multi-Zoning Approach</h4><p>Rather than applying the same product everywhere and hoping for the best, the multi-zoning method treats your face as distinct regions with individual needs. This might mean using a gentle gel cleanser across the whole face, but applying a clay mask only on the T-zone while using a hydrating mask on the cheeks simultaneously — a technique known as multi-masking.</p><h4>Building a Combination Skin Routine</h4><ul><li><strong>Cleanser:</strong> Gentle, balanced gel-cream — neither too foaming nor too rich</li><li><strong>Toner:</strong> Niacinamide works beautifully — it regulates oil AND supports the barrier</li><li><strong>Serum:</strong> Apply BHA to the T-zone, hyaluronic acid to the cheeks</li><li><strong>Moisturiser:</strong> Lightweight gel-lotion overall; add a richer cream to cheeks if needed</li><li><strong>SPF:</strong> A balanced fluid SPF that controls shine without drying</li></ul><h4>Seasonal Adjustments</h4><p>Combination skin often shifts with the seasons — becoming oilier in summer and drier in winter. Review your routine every three months and adjust product richness accordingly rather than sticking rigidly to the same formula year-round.</p>`
   }
 ];
 
@@ -1410,20 +1304,47 @@ const trackerNight = [
   { id:'n5', step:'Moisturizer', desc:'Rich cream to repair skin overnight' }
 ];
 
-// ===== STATE =====
-let currentSkin = 'oily';
-let currentDetailPanel = 'desc';
-let trackerState = JSON.parse(localStorage.getItem('gg_tracker') || '{}');
-let streakData = JSON.parse(localStorage.getItem('gg_streak') || '{"days":[],"count":0}');
+// ===== STATE (in-memory; synced from Firestore on login) =====
+window.trackerState = JSON.parse(localStorage.getItem('gg_tracker') || '{}');
+window.streakData   = JSON.parse(localStorage.getItem('gg_streak')  || '{"days":[],"count":0}');
+
+// ── Convenience getters so functions always use latest window.* values ──
+function getTrackerState() { return window.trackerState; }
+function getStreakData()    { return window.streakData;   }
+
+// ── Debounced Firestore save (avoids hammering on rapid taps) ──
+let _saveTrackerTimer = null;
+let _saveStreakTimer  = null;
+
+function persistTracker() {
+  const uid = window._currentUID;
+  // Always save to localStorage as fallback
+  localStorage.setItem('gg_tracker', JSON.stringify(window.trackerState));
+  if (uid && window._firestoreFns) {
+    clearTimeout(_saveTrackerTimer);
+    _saveTrackerTimer = setTimeout(() => {
+      window._firestoreFns.saveTracker(uid, window.trackerState);
+    }, 800);
+  }
+}
+
+function persistStreak() {
+  const uid = window._currentUID;
+  localStorage.setItem('gg_streak', JSON.stringify(window.streakData));
+  if (uid && window._firestoreFns) {
+    clearTimeout(_saveStreakTimer);
+    _saveStreakTimer = setTimeout(() => {
+      window._firestoreFns.saveStreak(uid, window.streakData);
+    }, 800);
+  }
+}
 
 // ===== PAGE NAV (AUTH-GATED) =====
 function showPage(name) {
-  // Guard: if page is protected and user is not authenticated, bounce to home with toast
   if (PROTECTED_PAGES.has(name) && !isAuthenticated()) {
     showToast();
     name = 'home';
   }
-
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   window.scrollTo(0, 0);
@@ -1445,11 +1366,7 @@ function toggleMenu() {
 
 // ===== SKIN DETAIL =====
 function showSkinDetail(type) {
-  // Also guard showSkinDetail since it calls showPage('skindetail')
-  if (!isAuthenticated()) {
-    showToast();
-    return;
-  }
+  if (!isAuthenticated()) { showToast(); return; }
   currentSkin = type;
   currentDetailPanel = 'desc';
   const d = skinData[type];
@@ -1472,6 +1389,9 @@ function showDetailPanel(panel, btn) {
   renderDetailPanel(panel);
 }
 
+let currentSkin = 'oily';
+let currentDetailPanel = 'desc';
+
 function renderDetailPanel(panel) {
   const d = skinData[currentSkin];
   const c = document.getElementById('skinDetailContent');
@@ -1493,7 +1413,7 @@ function renderDetailPanel(panel) {
       <div class="info-grid">${d.tips.map(t=>`
         <div class="info-box"><ul><li>${t}</li></ul></div>`).join('')}</div></div>`;
   } else if (panel === 'products') {
-    const typeMap = {oily:'oily',dry:'dry',combo:'combo'};
+    const typeMap = {oily:'oily', dry:'dry', combo:'combo'};
     const ps = products.filter(p => p.type === typeMap[currentSkin]);
     c.innerHTML = `<div class="detail-panel active"><h3 class="tab-content-header">Recommended Products</h3>
       <div class="product-grid">${ps.map(p => productCard(p)).join('')}</div></div>`;
@@ -1504,11 +1424,11 @@ function renderDetailPanel(panel) {
 function productCard(p) {
   return `<div class="product-card" onclick="showProductDetail(${p.id})">
     <div class="product-img">
-      <img src="${p.icon}" alt="${p.name}" style="width:100%; height:100%; object-fit:cover;">
+      <img src="${p.icon}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;">
       ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
     </div>
     <div class="product-body">
-      <div class="product-type">${p.type === 'oily' ? 'Oily Skin' : p.type === 'dry' ? 'Dry Skin' : 'Combination'}</div>
+      <div class="product-type">${p.type==='oily'?'Oily Skin':p.type==='dry'?'Dry Skin':'Combination'}</div>
       <h3>${p.name}</h3>
       <p>${p.desc}</p>
       <div class="product-footer">
@@ -1555,53 +1475,55 @@ function showProductDetail(id) {
   showPage('productdetail');
 }
 
-// ===== TRACKER =====
+// ===== TRACKER (Firestore-synced) =====
 function renderTracker() {
   const today = new Date().toDateString();
+  const ts = getTrackerState();
   document.getElementById('morningTracker').innerHTML = trackerMorning.map(item => `
-    <div class="tracker-item ${trackerState[today+'_'+item.id] ? 'done' : ''}" onclick="toggleTracker('${today}','${item.id}',this)">
-      <div class="tracker-cb">${trackerState[today+'_'+item.id] ? '✓' : ''}</div>
+    <div class="tracker-item ${ts[today+'_'+item.id] ? 'done' : ''}" onclick="toggleTracker('${today}','${item.id}',this)">
+      <div class="tracker-cb">${ts[today+'_'+item.id] ? '✓' : ''}</div>
       <div class="tracker-text"><h5>${item.step}</h5><p>${item.desc}</p></div>
     </div>`).join('');
   document.getElementById('nightTracker').innerHTML = trackerNight.map(item => `
-    <div class="tracker-item ${trackerState[today+'_'+item.id] ? 'done' : ''}" onclick="toggleTracker('${today}','${item.id}',this)">
-      <div class="tracker-cb">${trackerState[today+'_'+item.id] ? '✓' : ''}</div>
+    <div class="tracker-item ${ts[today+'_'+item.id] ? 'done' : ''}" onclick="toggleTracker('${today}','${item.id}',this)">
+      <div class="tracker-cb">${ts[today+'_'+item.id] ? '✓' : ''}</div>
       <div class="tracker-text"><h5>${item.step}</h5><p>${item.desc}</p></div>
     </div>`).join('');
   renderStreak();
 }
 
 function toggleTracker(date, id, el) {
-  const key = date+'_'+id;
-  trackerState[key] = !trackerState[key];
-  localStorage.setItem('gg_tracker', JSON.stringify(trackerState));
-  el.classList.toggle('done', trackerState[key]);
-  el.querySelector('.tracker-cb').textContent = trackerState[key] ? '✓' : '';
+  const key = date + '_' + id;
+  window.trackerState[key] = !window.trackerState[key];
+  el.classList.toggle('done', window.trackerState[key]);
+  el.querySelector('.tracker-cb').textContent = window.trackerState[key] ? '✓' : '';
+  persistTracker();
   checkDayComplete(date);
 }
 
 function checkDayComplete(date) {
   const allKeys = [...trackerMorning, ...trackerNight].map(i => date+'_'+i.id);
-  const done = allKeys.filter(k => trackerState[k]).length;
+  const done = allKeys.filter(k => window.trackerState[k]).length;
   if (done === allKeys.length) {
-    if (!streakData.days.includes(date)) {
-      streakData.days.push(date);
-      streakData.count = streakData.days.length;
-      localStorage.setItem('gg_streak', JSON.stringify(streakData));
+    if (!window.streakData.days.includes(date)) {
+      window.streakData.days.push(date);
+      window.streakData.count = window.streakData.days.length;
+      persistStreak();
       renderStreak();
     }
   }
 }
 
 function renderStreak() {
-  document.getElementById('streakNum').textContent = streakData.count;
+  const sd = getStreakData();
+  document.getElementById('streakNum').textContent = sd.count;
   const last7 = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
     last7.push(d.toDateString());
   }
   document.getElementById('streakDays').innerHTML = last7.map(d => {
-    const done = streakData.days.includes(d);
+    const done = sd.days.includes(d);
     const label = new Date(d).toLocaleDateString('en',{weekday:'short'}).charAt(0);
     return `<div class="streak-day ${done?'done':''}">${label}</div>`;
   }).join('');
@@ -1609,8 +1531,8 @@ function renderStreak() {
 
 function resetStreak() {
   if (confirm('Reset your streak? This cannot be undone.')) {
-    streakData = {days:[], count:0};
-    localStorage.setItem('gg_streak', JSON.stringify(streakData));
+    window.streakData = { days: [], count: 0 };
+    persistStreak();
     renderStreak();
   }
 }
@@ -1628,7 +1550,7 @@ async function fetchWeather() {
       `<p style="color:var(--clay);font-size:.9rem">Please enter a city name first.</p>`;
     return;
   }
-  const result = document.getElementById('weatherResult');
+  const result   = document.getElementById('weatherResult');
   const tipsGrid = document.getElementById('weatherTipsGrid');
   result.innerHTML = `
     <div class="weather-loading">
@@ -1638,7 +1560,7 @@ async function fetchWeather() {
   tipsGrid.innerHTML = '';
   try {
     const url = `https://wttr.in/${encodeURIComponent(cityRaw)}?format=j1`;
-    const res = await fetch(url);
+    const res  = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const current   = data.current_condition[0];
@@ -1651,10 +1573,9 @@ async function fetchWeather() {
     const areaName    = area.areaName[0].value;
     const countryName = area.country[0].value;
     const displayCity = areaName ? `${areaName}, ${countryName}` : cityRaw;
-    const weatherEmoji = getWeatherEmoji(desc);
     result.innerHTML = `
       <div class="weather-widget">
-        <div style="font-size:6rem;line-height:1">${weatherEmoji}</div>
+        <div style="font-size:6rem;line-height:1">${getWeatherEmoji(desc)}</div>
         <div>
           <div class="weather-temp">${temp}°C</div>
           <div class="weather-info">
@@ -1681,15 +1602,15 @@ async function fetchWeather() {
 
 function getWeatherEmoji(desc) {
   const d = desc.toLowerCase();
-  if (d.includes('sunny') || d.includes('clear'))             return '☀️';
-  if (d.includes('partly cloudy') || d.includes('overcast'))  return '⛅';
-  if (d.includes('cloud'))                                     return '☁️';
-  if (d.includes('thunder') || d.includes('storm'))           return '⛈️';
-  if (d.includes('drizzle') || d.includes('light rain'))      return '🌦️';
-  if (d.includes('rain') || d.includes('shower'))             return '🌧️';
-  if (d.includes('snow') || d.includes('blizzard'))           return '❄️';
+  if (d.includes('sunny') || d.includes('clear'))            return '☀️';
+  if (d.includes('partly cloudy') || d.includes('overcast')) return '⛅';
+  if (d.includes('cloud'))                                    return '☁️';
+  if (d.includes('thunder') || d.includes('storm'))          return '⛈️';
+  if (d.includes('drizzle') || d.includes('light rain'))     return '🌦️';
+  if (d.includes('rain') || d.includes('shower'))            return '🌧️';
+  if (d.includes('snow') || d.includes('blizzard'))          return '❄️';
   if (d.includes('mist') || d.includes('fog') || d.includes('haze')) return '🌫️';
-  if (d.includes('wind'))                                      return '💨';
+  if (d.includes('wind'))                                     return '💨';
   return '🌡️';
 }
 
@@ -1741,7 +1662,7 @@ function renderBlog() {
 }
 
 function showBlogDetail(id) {
-  const post = blogPosts[id];
+  const post   = blogPosts[id];
   const colors = ['#ffecd2','#ffdde1','#d4efdf','#e8f4fd','#fef9e7','#fce4ec'];
   document.getElementById('blogDetailContent').innerHTML = `
     <div class="blog-detail-hero-img" style="background:${colors[id % colors.length]}">${post.img}</div>
@@ -1775,42 +1696,61 @@ function showAuthMsg(id, type, msg) {
 }
 
 function handleSignIn() {
-  const email = document.getElementById('siEmail').value;
+  const email = document.getElementById('siEmail').value.trim();
   const pass  = document.getElementById('siPass').value;
   if (!email || !pass) { showAuthMsg('signinMsg','error','Please fill in all fields.'); return; }
-  if (!window._fbFns)  { showAuthMsg('signinMsg','error','Firebase not configured.');   return; }
+  if (!window._fbFns)  { showAuthMsg('signinMsg','error','Firebase not initialized yet — please wait a moment.'); return; }
+  showAuthMsg('signinMsg','success','Signing in…');
   window._fbFns.signIn(email, pass)
     .then(() => { showPage('home'); })
-    .catch(e => showAuthMsg('signinMsg','error', e.message.replace('Firebase: ','')));
+    .catch(e => {
+      const msg = e.message.replace('Firebase: ','').replace(/\(auth\/.*\)/,'').trim();
+      showAuthMsg('signinMsg','error', msg || 'Sign-in failed. Please try again.');
+    });
 }
 
 function handleSignUp() {
-  const email = document.getElementById('suEmail').value;
+  const email = document.getElementById('suEmail').value.trim();
   const pass  = document.getElementById('suPass').value;
   if (!email || !pass) { showAuthMsg('signupMsg','error','Please fill in all fields.'); return; }
-  if (!window._fbFns)  { showAuthMsg('signupMsg','error','Firebase not configured.');   return; }
+  if (pass.length < 6) { showAuthMsg('signupMsg','error','Password must be at least 6 characters.'); return; }
+  if (!window._fbFns)  { showAuthMsg('signupMsg','error','Firebase not initialized yet — please wait a moment.'); return; }
+  showAuthMsg('signupMsg','success','Creating your account…');
   window._fbFns.signUp(email, pass)
     .then(() => {
-      showAuthMsg('signupMsg','success','Account created! Welcome to Glow & Go.');
+      showAuthMsg('signupMsg','success','Account created! Welcome to Glow & Go 🌿');
       setTimeout(() => showPage('home'), 1500);
     })
-    .catch(e => showAuthMsg('signupMsg','error', e.message.replace('Firebase: ','')));
+    .catch(e => {
+      const msg = e.message.replace('Firebase: ','').replace(/\(auth\/.*\)/,'').trim();
+      showAuthMsg('signupMsg','error', msg || 'Sign-up failed. Please try again.');
+    });
 }
 
 function handleGoogleSignIn() {
-  if (!window._fbFns) { alert('Firebase not configured.'); return; }
+  if (!window._fbFns) { alert('Firebase not initialized yet — please wait a moment.'); return; }
   window._fbFns.googleSignIn()
     .then(() => showPage('home'))
-    .catch(e => console.error(e));
+    .catch(e => {
+      console.error('Google sign-in error:', e);
+      // Ignore popup-closed-by-user errors silently
+      if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+        alert('Google sign-in failed: ' + e.message);
+      }
+    });
 }
 
 function handleForgotPassword() {
-  const email = document.getElementById('fpEmail').value;
+  const email = document.getElementById('fpEmail').value.trim();
   if (!email) { showAuthMsg('forgotMsg','error','Please enter your email address.'); return; }
-  if (!window._fbFns) { showAuthMsg('forgotMsg','error','Firebase not configured.'); return; }
+  if (!window._fbFns) { showAuthMsg('forgotMsg','error','Firebase not initialized yet — please wait a moment.'); return; }
+  showAuthMsg('forgotMsg','success','Sending reset link…');
   window._fbFns.resetPwd(email)
-    .then(() => showAuthMsg('forgotMsg','success','Password reset link sent! Check your inbox.'))
-    .catch(e => showAuthMsg('forgotMsg','error', e.message.replace('Firebase: ','')));
+    .then(() => showAuthMsg('forgotMsg','success','✅ Password reset link sent! Check your inbox (and spam folder).'))
+    .catch(e => {
+      const msg = e.message.replace('Firebase: ','').replace(/\(auth\/.*\)/,'').trim();
+      showAuthMsg('forgotMsg','error', msg || 'Failed to send reset email.');
+    });
 }
 
 // ===== SCROLL REVEAL =====
@@ -1827,7 +1767,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderProducts('all');
   renderBlog();
   renderVideos();
-  renderTracker();
+  // Tracker renders after auth loads data via onAuth listener
 });
 </script>
 </body>
