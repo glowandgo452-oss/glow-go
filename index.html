@@ -20,7 +20,8 @@
     GoogleAuthProvider,
     signInWithPopup,
     setPersistence,
-    browserLocalPersistence
+    browserLocalPersistence,
+    updateProfile
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import {
     getFirestore,
@@ -30,7 +31,6 @@
     onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  // ── NEW Firebase config ──
   const firebaseConfig = {
     apiKey: "AIzaSyD1AUqXqAbJs6nY4dF9xxTJRnrPPqjNOE0",
     authDomain: "goandglow-e48ea.firebaseapp.com",
@@ -46,36 +46,29 @@
   const db   = getFirestore(app);
   const googleProvider = new GoogleAuthProvider();
 
-  // ── Set persistence to LOCAL so the user stays logged in across browser sessions ──
   setPersistence(auth, browserLocalPersistence).catch(console.error);
 
-  // ── Expose globals ──
   window._auth           = auth;
   window._db             = db;
   window._googleProvider = googleProvider;
 
-  // ── Firestore helpers ──
   window._firestoreFns = {
-    // Save tracker state for current user
     saveTracker: async (uid, trackerState) => {
       try {
         await setDoc(doc(db, 'users', uid, 'data', 'tracker'), { state: trackerState }, { merge: true });
       } catch(e) { console.error('Firestore saveTracker:', e); }
     },
-    // Save streak data for current user
     saveStreak: async (uid, streakData) => {
       try {
         await setDoc(doc(db, 'users', uid, 'data', 'streak'), streakData, { merge: true });
       } catch(e) { console.error('Firestore saveStreak:', e); }
     },
-    // Load tracker state
     loadTracker: async (uid) => {
       try {
         const snap = await getDoc(doc(db, 'users', uid, 'data', 'tracker'));
         return snap.exists() ? (snap.data().state || {}) : {};
       } catch(e) { console.error('Firestore loadTracker:', e); return {}; }
     },
-    // Load streak data
     loadStreak: async (uid) => {
       try {
         const snap = await getDoc(doc(db, 'users', uid, 'data', 'streak'));
@@ -90,7 +83,9 @@
     resetPwd:     (e)    => sendPasswordResetEmail(auth, e),
     signOut:      ()     => signOut(auth),
     googleSignIn: ()     => signInWithPopup(auth, googleProvider),
-    onAuth:       (cb)   => onAuthStateChanged(auth, cb)
+    onAuth:       (cb)   => onAuthStateChanged(auth, cb),
+    // ── NEW: update display name after signup ──
+    updateDisplayName: (user, name) => updateProfile(user, { displayName: name })
   };
 
   // ── Auth state listener ──
@@ -99,28 +94,25 @@
     if (!bar) return;
 
     if (user) {
-      // Grant access
       document.body.classList.add('user-authenticated');
       window._currentUID = user.uid;
 
+      const displayName = user.displayName || user.email;
       bar.innerHTML = `
-        <span style="color:var(--terracotta);font-size:.85rem">👤 ${user.displayName || user.email}</span>
+        <span style="color:var(--terracotta);font-size:.85rem">👤 ${displayName}</span>
         <button class="nav-btn" onclick="window._fbFns.signOut()">Logout</button>`;
 
-      // ── Load Firestore data into in-memory state ──
       if (window._firestoreFns) {
         const [trackerFromDB, streakFromDB] = await Promise.all([
           window._firestoreFns.loadTracker(user.uid),
           window._firestoreFns.loadStreak(user.uid)
         ]);
-        // Merge with localStorage fallback (Firestore wins)
         window.trackerState = Object.keys(trackerFromDB).length ? trackerFromDB
           : JSON.parse(localStorage.getItem('gg_tracker') || '{}');
         window.streakData = (streakFromDB && streakFromDB.days)
           ? streakFromDB
           : JSON.parse(localStorage.getItem('gg_streak') || '{"days":[],"count":0}');
 
-        // Re-render tracker if already on that page
         const activePage = document.querySelector('.page.active');
         if (activePage && activePage.id === 'page-tracker') {
           renderTracker();
@@ -128,12 +120,10 @@
       }
 
     } else {
-      // Revoke access
       document.body.classList.remove('user-authenticated');
       window._currentUID = null;
       bar.innerHTML = `<button class="nav-btn" onclick="showPage('signin')">Sign In</button>`;
 
-      // If currently on a protected page, bounce to home
       const activePage = document.querySelector('.page.active');
       if (activePage) {
         const activeId = activePage.id.replace('page-', '');
@@ -631,7 +621,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 }
 .auth-card {
   background: #fff; border-radius: 24px;
-  padding: 48px 44px; width: 100%; max-width: 420px;
+  padding: 48px 44px; width: 100%; max-width: 440px;
   box-shadow: 0 20px 60px rgba(168,96,74,0.14);
 }
 .auth-card h2 { font-family: var(--ff-display); font-size: 2.2rem; font-weight: 300; margin-bottom: 6px; }
@@ -644,6 +634,39 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   background: var(--cream); color: var(--text); outline: none; transition: border .25s;
 }
 .form-group input:focus { border-color: var(--terracotta); }
+
+/* ── Password strength bar ── */
+.pw-strength-bar {
+  height: 4px; border-radius: 4px; margin-top: 8px;
+  background: #e8ddd7; overflow: hidden;
+}
+.pw-strength-fill {
+  height: 100%; border-radius: 4px; width: 0%;
+  transition: width .3s ease, background .3s ease;
+}
+.pw-strength-label {
+  font-size: .72rem; margin-top: 4px; color: var(--text-light);
+}
+
+/* ── Password toggle ── */
+.input-wrapper { position: relative; }
+.input-wrapper input { padding-right: 44px; }
+.pw-toggle {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: var(--text-light); font-size: .85rem; padding: 0;
+  transition: color .2s;
+}
+.pw-toggle:hover { color: var(--terracotta); }
+
+/* ── Terms checkbox ── */
+.terms-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-bottom: 18px; font-size: .82rem; color: var(--text-light); line-height: 1.5;
+}
+.terms-row input[type=checkbox] { margin-top: 2px; accent-color: var(--terracotta); flex-shrink: 0; }
+.terms-row a { color: var(--terracotta); cursor: pointer; font-weight: 600; text-decoration: none; }
+
 .auth-btn {
   width: 100%; padding: 14px; border-radius: 12px;
   background: var(--terracotta); color: #fff; border: none;
@@ -651,6 +674,7 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
   cursor: pointer; transition: all .3s; margin-top: 6px;
 }
 .auth-btn:hover { background: var(--clay); }
+.auth-btn:disabled { background: var(--rose); cursor: not-allowed; opacity: .7; }
 .google-btn {
   width: 100%; padding: 13px; border-radius: 12px;
   background: #fff; color: var(--text); border: 1.5px solid #e8ddd7;
@@ -668,6 +692,10 @@ body:not(.user-authenticated) .nav-links .nav-link:not(.nav-link-home) {
 .auth-msg.success { background: rgba(122,158,118,0.15); color: #4a7a46; display: block; }
 .auth-msg.error   { background: rgba(201,133,106,0.15); color: var(--clay); display: block; }
 .forgot-link { background: none; border: none; color: var(--terracotta); font-size: .82rem; font-family: var(--ff-body); cursor: pointer; margin-top: 8px; }
+
+/* ── Name row (two cols) ── */
+.name-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 480px) { .name-row { grid-template-columns: 1fr; } }
 
 /* ===== SYNC STATUS ===== */
 .sync-badge {
@@ -1047,7 +1075,10 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="siPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleSignIn()"/>
+        <div class="input-wrapper">
+          <input type="password" id="siPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleSignIn()"/>
+          <button class="pw-toggle" type="button" onclick="togglePw('siPass',this)" tabindex="-1"><i class="fas fa-eye"></i></button>
+        </div>
       </div>
       <button class="auth-btn" onclick="handleSignIn()">Sign In</button>
       <button class="forgot-link" onclick="showPage('forgot')">Forgot password?</button>
@@ -1061,22 +1092,59 @@ footer hr { border-color: rgba(255,255,255,0.1); margin-bottom: 22px; }
   </div>
 </div>
 
-<!-- ===================== SIGN UP PAGE ===================== -->
+<!-- ===================== SIGN UP PAGE (FIXED) ===================== -->
 <div class="page" id="page-signup">
   <div class="auth-page">
     <div class="auth-card">
       <h2>Create Account</h2>
-      <p class="sub">Join Glow & Go and start your skin journey</p>
+      <p class="sub">Join Glow & Go and start your skin journey 🌿</p>
       <div class="auth-msg" id="signupMsg"></div>
+
+      <!-- Name row -->
+      <div class="name-row">
+        <div class="form-group" style="margin-bottom:0">
+          <label>First Name</label>
+          <input type="text" id="suFirstName" placeholder="e.g. Priya" autocomplete="given-name"/>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Last Name</label>
+          <input type="text" id="suLastName" placeholder="e.g. Sharma" autocomplete="family-name"/>
+        </div>
+      </div>
+      <div style="margin-bottom:18px"></div>
+
       <div class="form-group">
         <label>Email Address</label>
-        <input type="email" id="suEmail" placeholder="you@example.com"/>
+        <input type="email" id="suEmail" placeholder="you@example.com" autocomplete="email"/>
       </div>
+
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="suPass" placeholder="Minimum 6 characters" onkeydown="if(event.key==='Enter')handleSignUp()"/>
+        <div class="input-wrapper">
+          <input type="password" id="suPass" placeholder="Minimum 6 characters" autocomplete="new-password"
+            oninput="checkPasswordStrength(this.value)" onkeydown="if(event.key==='Enter')handleSignUp()"/>
+          <button class="pw-toggle" type="button" onclick="togglePw('suPass',this)" tabindex="-1"><i class="fas fa-eye"></i></button>
+        </div>
+        <div class="pw-strength-bar"><div class="pw-strength-fill" id="pwStrengthFill"></div></div>
+        <div class="pw-strength-label" id="pwStrengthLabel"></div>
       </div>
-      <button class="auth-btn" onclick="handleSignUp()">Create Account</button>
+
+      <div class="form-group">
+        <label>Confirm Password</label>
+        <div class="input-wrapper">
+          <input type="password" id="suPassConfirm" placeholder="Re-enter your password" autocomplete="new-password"
+            onkeydown="if(event.key==='Enter')handleSignUp()"/>
+          <button class="pw-toggle" type="button" onclick="togglePw('suPassConfirm',this)" tabindex="-1"><i class="fas fa-eye"></i></button>
+        </div>
+      </div>
+
+      <!-- Terms checkbox -->
+      <div class="terms-row">
+        <input type="checkbox" id="suTerms"/>
+        <label for="suTerms">I agree to the <a>Terms of Service</a> and <a>Privacy Policy</a></label>
+      </div>
+
+      <button class="auth-btn" id="signupBtn" onclick="handleSignUp()">Create Account</button>
       <div class="auth-divider"><hr/><span>or</span><hr/></div>
       <button class="google-btn" onclick="handleGoogleSignIn()">
         <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
@@ -1174,6 +1242,42 @@ function hideToast() {
   document.getElementById('authToast').classList.remove('show');
 }
 
+// ===== PASSWORD HELPERS =====
+function togglePw(inputId, btn) {
+  const input = document.getElementById(inputId);
+  const icon  = btn.querySelector('i');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.className = 'fas fa-eye-slash';
+  } else {
+    input.type = 'password';
+    icon.className = 'fas fa-eye';
+  }
+}
+
+function checkPasswordStrength(val) {
+  const fill  = document.getElementById('pwStrengthFill');
+  const label = document.getElementById('pwStrengthLabel');
+  if (!fill) return;
+  let score = 0;
+  if (val.length >= 6)  score++;
+  if (val.length >= 10) score++;
+  if (/[A-Z]/.test(val)) score++;
+  if (/[0-9]/.test(val)) score++;
+  if (/[^A-Za-z0-9]/.test(val)) score++;
+  const levels = [
+    { pct: '0%',   color: '#e8ddd7', text: '' },
+    { pct: '25%',  color: '#e57373', text: 'Weak' },
+    { pct: '50%',  color: '#ffb74d', text: 'Fair' },
+    { pct: '75%',  color: '#fff176', text: 'Good' },
+    { pct: '100%', color: '#81c784', text: 'Strong 💪' }
+  ];
+  const l = levels[Math.min(score, 4)];
+  fill.style.width    = l.pct;
+  fill.style.background = l.color;
+  label.textContent   = val.length ? l.text : '';
+}
+
 // ===== DATA =====
 const skinData = {
   oily: {
@@ -1225,7 +1329,7 @@ const products = [
   { id:2, name:"Paula's Choice BHA Exfoliant", type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Paula.jpg?raw=true', price:'₹1,200', desc:'2% salicylic acid liquid exfoliant to unclog pores and smooth skin texture.', benefits:['Unclogs pores','Reduces blackheads','Improves skin texture','Anti-inflammatory'], badge:'Top Rated', link:'https://www.paulaschoice.in/products/skin-perfecting-2-bha-liquid-exfoliant' },
   { id:3, name:'Neutrogena Oil-Free Moisturizer', type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Neutrogena%20Ultra%20Gentle%20Daily%20Face%20Moisturizer%20With%20Glycerin,%20Niacinamide%20&%20Vitamin%20B5.jpg?raw=true', price:'₹750', desc:'Lightweight, oil-free moisturizer that hydrates without any greasy residue.', benefits:['Oil-free formula','Non-comedogenic','Lightweight feel','SPF protection'], badge:'', link:'https://www.nykaa.com/neutrogena-ultra-gentle-daily-face-moisturizer-with-glycerin-niacinamide-vitamin-b5/p/18355488' },
   { id:4, name:'La Roche-Posay Effaclar', type:'oily', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/La%20Roche-Posay%20Effaclar%20Duo+M%20Gel%20with%20Salicylic%20acid,%20Anti-Acne%20Moisturiser%20for%20Acne-Prone%20Skin.jpg?raw=true', price:'₹1,250', desc:'Mattifying gel moisturizer with LHA and zinc PCA for oily and acne-prone skin.', benefits:['Mattifying effect','Controls shine','Tightens pores','With zinc PCA'], badge:'New', link:'https://www.nykaaman.com/la-roche-posay-effaclar-duo-m-anti-breakout-moisturiser/p/23570695' },
-  { id:5, name:'CeraVe Moisturizing Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/CeraVe%20Moisturizer%20Cream%20For%20Dry%20Skin%20With%20Ceramides%20&%20Hyaluronic%20Acid%20For%20Barrier%20Repair.jpg?raw=true', price:'₹387', desc:'Rich 24-hour moisturizer with ceramides and hyaluronic acid for very dry skin.', benefits:['Rich ceramide formula','24-hour hydration','Restores skin barrier','Fragrance-free'], badge:'Best Seller', link:'https://www.nykaaman.com/cerave-moisturizing-cream-for-dry-to-very-dry-skin-with-ceramides-hyaluronic-acid/p/13169472' },
+  { id:5, name:'CeraVe Moisturizing Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/CeraVe%20Moisturizer%20Cream%20For%20Dry%20Skin%20With%20Ceramides%20%26%20Hyaluronic%20Acid%20For%20Barrier%20Repair.jpg?raw=true', price:'₹387', desc:'Rich 24-hour moisturizer with ceramides and hyaluronic acid for very dry skin.', benefits:['Rich ceramide formula','24-hour hydration','Restores skin barrier','Fragrance-free'], badge:'Best Seller', link:'https://www.nykaaman.com/cerave-moisturizing-cream-for-dry-to-very-dry-skin-with-ceramides-hyaluronic-acid/p/13169472' },
   { id:6, name:'The Ordinary HA 2% + B5', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/The%20Ordinary%20Hyaluronic%20Acid%202%25%20+%20B5.jpg?raw=true', price:'₹999', desc:'High-purity hyaluronic acid serum with vitamin B5 for intense surface hydration.', benefits:['Multi-weight HA','Plumps skin','Reduces fine lines','Suitable for all types'], badge:'Top Rated', link:'https://www.nykaaman.com/the-ordinary-hyaluronic-acid-2percent-b5/p/13806304' },
   { id:7, name:"Kiehl's Ultra Facial Cream", type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/kiehl.jpg?raw=true', price:'₹3000', desc:'Intensely hydrating 24-hour facial cream with glacial glycoprotein and cross-linked hyaluronic acid.', benefits:['24-hour hydration','Strengthens barrier','Comfortable feel','Dermatologist tested'], badge:'', link:'https://www.nykaaman.com/kiehl-s-ultra-facial-cream/p/435017' },
   { id:8, name:'Drunk Elephant Lala Whipped Cream', type:'dry', icon:'https://github.com/glowandgo452-oss/glow-go/blob/main/images/Drunk%20Elephant%20Lala%20Retro%20Whipped%20Cream%20Moisturizer%20with%20Ceramides.jpg?raw=true', price:'₹9,999', desc:'Airy yet hydrating facial moisturizer packed with ceramides and fatty acids.', benefits:['Ceramide-rich','Squalane & fatty acids','Lightweight texture','Barrier repair'], badge:'Luxe', link:'https://www.kicksmachine.com/products/drunk-elephant-lala-retro-whipped-cream-moisturizer-with-ceramides' },
@@ -1304,21 +1408,18 @@ const trackerNight = [
   { id:'n5', step:'Moisturizer', desc:'Rich cream to repair skin overnight' }
 ];
 
-// ===== STATE (in-memory; synced from Firestore on login) =====
+// ===== STATE =====
 window.trackerState = JSON.parse(localStorage.getItem('gg_tracker') || '{}');
 window.streakData   = JSON.parse(localStorage.getItem('gg_streak')  || '{"days":[],"count":0}');
 
-// ── Convenience getters so functions always use latest window.* values ──
 function getTrackerState() { return window.trackerState; }
 function getStreakData()    { return window.streakData;   }
 
-// ── Debounced Firestore save (avoids hammering on rapid taps) ──
 let _saveTrackerTimer = null;
 let _saveStreakTimer  = null;
 
 function persistTracker() {
   const uid = window._currentUID;
-  // Always save to localStorage as fallback
   localStorage.setItem('gg_tracker', JSON.stringify(window.trackerState));
   if (uid && window._firestoreFns) {
     clearTimeout(_saveTrackerTimer);
@@ -1339,7 +1440,7 @@ function persistStreak() {
   }
 }
 
-// ===== PAGE NAV (AUTH-GATED) =====
+// ===== PAGE NAV =====
 function showPage(name) {
   if (PROTECTED_PAGES.has(name) && !isAuthenticated()) {
     showToast();
@@ -1475,7 +1576,7 @@ function showProductDetail(id) {
   showPage('productdetail');
 }
 
-// ===== TRACKER (Firestore-synced) =====
+// ===== TRACKER =====
 function renderTracker() {
   const today = new Date().toDateString();
   const ts = getTrackerState();
@@ -1688,13 +1789,14 @@ function renderVideos() {
     </div>`).join('');
 }
 
-// ===== AUTH =====
+// ===== AUTH HELPERS =====
 function showAuthMsg(id, type, msg) {
   const el = document.getElementById(id);
   el.className = 'auth-msg ' + type;
   el.textContent = msg;
 }
 
+// ===== SIGN IN =====
 function handleSignIn() {
   const email = document.getElementById('siEmail').value.trim();
   const pass  = document.getElementById('siPass').value;
@@ -1709,37 +1811,88 @@ function handleSignIn() {
     });
 }
 
-function handleSignUp() {
-  const email = document.getElementById('suEmail').value.trim();
-  const pass  = document.getElementById('suPass').value;
-  if (!email || !pass) { showAuthMsg('signupMsg','error','Please fill in all fields.'); return; }
-  if (pass.length < 6) { showAuthMsg('signupMsg','error','Password must be at least 6 characters.'); return; }
-  if (!window._fbFns)  { showAuthMsg('signupMsg','error','Firebase not initialized yet — please wait a moment.'); return; }
+// ===== SIGN UP (FIXED) =====
+async function handleSignUp() {
+  const firstName   = document.getElementById('suFirstName').value.trim();
+  const lastName    = document.getElementById('suLastName').value.trim();
+  const email       = document.getElementById('suEmail').value.trim();
+  const pass        = document.getElementById('suPass').value;
+  const passConfirm = document.getElementById('suPassConfirm').value;
+  const termsChecked = document.getElementById('suTerms').checked;
+
+  // ── Validation ──
+  if (!firstName)        { showAuthMsg('signupMsg','error','Please enter your first name.'); return; }
+  if (!lastName)         { showAuthMsg('signupMsg','error','Please enter your last name.'); return; }
+  if (!email)            { showAuthMsg('signupMsg','error','Please enter your email address.'); return; }
+  if (pass.length < 6)   { showAuthMsg('signupMsg','error','Password must be at least 6 characters.'); return; }
+  if (pass !== passConfirm) { showAuthMsg('signupMsg','error','Passwords do not match. Please try again.'); return; }
+  if (!termsChecked)     { showAuthMsg('signupMsg','error','Please agree to the Terms of Service to continue.'); return; }
+  if (!window._fbFns)    { showAuthMsg('signupMsg','error','Firebase not initialized yet — please wait a moment.'); return; }
+
+  const btn = document.getElementById('signupBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
   showAuthMsg('signupMsg','success','Creating your account…');
-  window._fbFns.signUp(email, pass)
-    .then(() => {
-      showAuthMsg('signupMsg','success','Account created! Welcome to Glow & Go 🌿');
-      setTimeout(() => showPage('home'), 1500);
-    })
-    .catch(e => {
-      const msg = e.message.replace('Firebase: ','').replace(/\(auth\/.*\)/,'').trim();
-      showAuthMsg('signupMsg','error', msg || 'Sign-up failed. Please try again.');
-    });
+
+  try {
+    // 1️⃣ Create the Firebase Auth user
+    const userCredential = await window._fbFns.signUp(email, pass);
+    const user = userCredential.user;
+
+    // 2️⃣ Set the display name immediately on the new user object
+    //    This is the key fix — without this, displayName is null forever
+    const fullName = `${firstName} ${lastName}`;
+    await window._fbFns.updateDisplayName(user, fullName);
+
+    // 3️⃣ Optionally save profile to Firestore for extra reliability
+    if (window._firestoreFns && window._db) {
+      try {
+        const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+        await setDoc(doc(window._db, 'users', user.uid), {
+          firstName,
+          lastName,
+          displayName: fullName,
+          email,
+          createdAt: new Date().toISOString()
+        }, { merge: true });
+      } catch(fsErr) {
+        console.warn('Firestore profile save failed (non-critical):', fsErr);
+      }
+    }
+
+    showAuthMsg('signupMsg','success',`Welcome to Glow & Go, ${firstName}! 🌿`);
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+
+    // 4️⃣ Navigate home after a short delay so user sees the success message
+    setTimeout(() => showPage('home'), 1400);
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+    let msg = e.message.replace('Firebase: ','').replace(/\(auth\/.*\)/,'').trim();
+    // Friendly messages for common errors
+    if (e.code === 'auth/email-already-in-use') msg = 'This email is already registered. Try signing in instead.';
+    if (e.code === 'auth/invalid-email')         msg = 'Please enter a valid email address.';
+    if (e.code === 'auth/weak-password')         msg = 'Password is too weak. Use at least 6 characters.';
+    showAuthMsg('signupMsg','error', msg || 'Sign-up failed. Please try again.');
+  }
 }
 
+// ===== GOOGLE SIGN IN =====
 function handleGoogleSignIn() {
   if (!window._fbFns) { alert('Firebase not initialized yet — please wait a moment.'); return; }
   window._fbFns.googleSignIn()
     .then(() => showPage('home'))
     .catch(e => {
       console.error('Google sign-in error:', e);
-      // Ignore popup-closed-by-user errors silently
       if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
         alert('Google sign-in failed: ' + e.message);
       }
     });
 }
 
+// ===== FORGOT PASSWORD =====
 function handleForgotPassword() {
   const email = document.getElementById('fpEmail').value.trim();
   if (!email) { showAuthMsg('forgotMsg','error','Please enter your email address.'); return; }
@@ -1767,7 +1920,6 @@ document.addEventListener('DOMContentLoaded', () => {
   renderProducts('all');
   renderBlog();
   renderVideos();
-  // Tracker renders after auth loads data via onAuth listener
 });
 </script>
 </body>
